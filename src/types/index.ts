@@ -1,5 +1,6 @@
 import { Request } from 'express';
 import { Document } from 'mongoose';
+import mongoose from 'mongoose';
 
 // User Types
 export interface IUser extends Document {
@@ -15,21 +16,63 @@ export interface IUser extends Document {
   emailVerificationToken?: string;
   passwordResetToken?: string;
   passwordResetExpires?: Date;
+  
+  // Instance methods
+  comparePassword(candidatePassword: string): Promise<boolean>;
+  generateAuthToken(): string;
+  generateRefreshToken(): string;
+  generateEmailVerificationToken(): string;
+  generatePasswordResetToken(): string;
+}
+
+// User Model with static methods
+export interface IUserModel extends mongoose.Model<IUser> {
+  findByEmail(email: string): Promise<IUser | null>;
+  findByResetToken(token: string): Promise<IUser | null>;
+  findByVerificationToken(token: string): Promise<IUser | null>;
 }
 
 // Project Types
+export interface ITeamMember {
+  user: string;
+  role: 'owner' | 'admin' | 'member' | 'viewer';
+  permissions: ('read' | 'write' | 'admin')[];
+  addedAt: Date;
+}
+
 export interface IProject extends Document {
   _id: string;
   name: string;
-  description: string;
+  description?: string;
+  type: 'web' | 'mobile' | 'desktop' | 'api' | 'library' | 'other';
   ownerId: string;
-  teamMembers: string[];
-  status: 'uploading' | 'analyzing' | 'completed' | 'error';
+  teamMembers: ITeamMember[];
+  status: 'created' | 'uploading' | 'uploaded' | 'analyzing' | 'analyzed' | 'generating' | 'completed' | 'failed';
+  progress: {
+    uploadProgress: number;
+    analysisProgress: number;
+    documentationProgress: number;
+  };
   codebaseMetadata: {
     fileCount: number;
     languages: string[];
     totalLines: number;
     complexity: number;
+  };
+  uploadMetadata?: {
+    originalFileName?: string;
+    fileSize?: number;
+    uploadPath?: string;
+    extractedPath?: string;
+    uploadProgress: number;
+    analysisProgress: number;
+  };
+  analysisResults?: any;
+  errorDetails?: {
+    message: string;
+    code: string;
+    timestamp: Date;
+    stack?: string;
   };
   createdAt: Date;
   updatedAt: Date;
@@ -143,6 +186,8 @@ export interface IDocumentation extends Document {
   lastEditedBy: string;
   lastEditedAt: Date;
   isPublished: boolean;
+  publishedAt?: Date;
+  exportFormats: string[];
 }
 
 // Express Request Extensions

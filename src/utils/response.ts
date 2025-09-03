@@ -1,9 +1,9 @@
 import { Response } from 'express';
-import { ApiResponse, ApiSuccessResponse, ApiErrorResponse } from '@/types';
-import { logger } from './logger';
+import { ApiSuccessResponse, ApiErrorResponse } from '@/types';
+import { logger } from '@/utils/logger';
 
 /**
- * Standardized API response utility
+ * Standardized API Response Handler
  */
 export class ResponseHandler {
   /**

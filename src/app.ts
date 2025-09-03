@@ -12,6 +12,9 @@ import {
   helmetConfig, 
   compressionConfig 
 } from '@/middleware/security';
+import authRoutes from '@/routes/authRoutes';
+import projectRoutes from '@/routes/projectRoutes';
+import uploadRoutes from '@/routes/uploadRoutes';
 
 /**
  * Express application setup and configuration
@@ -61,49 +64,23 @@ export class App {
    * Initialize routes
    */
   private initializeRoutes(): void {
-    // Health check endpoint
+    // Health check route
     this.app.get('/health', (req: Request, res: Response) => {
-      ResponseHandler.success(res, {
-        status: 'healthy',
+      res.status(200).json({
+        status: 'OK',
         timestamp: new Date().toISOString(),
-        version: process.env.npm_package_version || '1.0.0',
-        environment: config.NODE_ENV
-      }, 'Service is healthy');
+        uptime: process.uptime()
+      });
     });
 
-    // Database health check
-    this.app.get('/health/db', async (req: Request, res: Response) => {
-      try {
-        const dbHealth = await database.healthCheck();
-        
-        if (dbHealth.status === 'healthy') {
-          ResponseHandler.success(res, dbHealth, 'Database is healthy');
-        } else {
-          ResponseHandler.error(res, dbHealth.message, 503, 'DATABASE_UNHEALTHY');
-        }
-      } catch (error) {
-        ResponseHandler.internalError(res, 'Database health check failed', error as Error);
-      }
-    });
+    // API routes
+    this.app.use('/api/v1/auth', authRoutes);
+    this.app.use('/api/v1/projects', projectRoutes);
+    this.app.use('/api/v1/projects', uploadRoutes);
 
-    // API routes will be added here
-    // this.app.use(`/api/${config.API_VERSION}/auth`, authRoutes);
-    // this.app.use(`/api/${config.API_VERSION}/projects`, projectRoutes);
-    // this.app.use(`/api/${config.API_VERSION}/analysis`, analysisRoutes);
-    // this.app.use(`/api/${config.API_VERSION}/documentation`, documentationRoutes);
-
-    // Root endpoint
-    this.app.get('/', (req: Request, res: Response) => {
-      ResponseHandler.success(res, {
-        name: 'Legacy Documentation Generator API',
-        version: process.env.npm_package_version || '1.0.0',
-        description: 'AI-powered platform for analyzing legacy codebases and generating documentation',
-        endpoints: {
-          health: '/health',
-          database: '/health/db',
-          api: `/api/${config.API_VERSION}`
-        }
-      }, 'Welcome to Legacy Documentation Generator API');
+    // 404 handler
+    this.app.use('*', (req, res) => {
+      ResponseHandler.notFound(res, `Route ${req.originalUrl} not found`);
     });
   }
 
