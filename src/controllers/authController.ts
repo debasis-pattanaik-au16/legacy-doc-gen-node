@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '@/types';
 import { ResponseHandler } from '@/utils/response';
 import { AppError, asyncHandler } from '@/middleware/errorHandler';
 import { logger } from '@/utils/logger';
+import { emailService } from '@/services/emailService';
 
 /**
  * Authentication Controller based on PRD specifications
@@ -40,6 +41,15 @@ export class AuthController {
     const verificationToken = user.generateEmailVerificationToken();
     await user.save();
 
+    // Send verification email
+    try {
+      await emailService.sendEmailVerificationEmail(email, verificationToken, name);
+      logger.info(`Verification email sent to: ${email}`);
+    } catch (error) {
+      logger.error(`Failed to send verification email to ${email}:`, error);
+      // Don't fail registration if email fails
+    }
+
     logger.info(`New user registered: ${email}`);
 
     ResponseHandler.success(res, {
@@ -57,7 +67,7 @@ export class AuthController {
         expiresIn: '7d'
       },
       ...(process.env.NODE_ENV === 'development' && { verificationToken })
-    }, 'User registered successfully', 201);
+    }, 'User registered successfully. Please check your email to verify your account.', 201);
   });
 
   /**
@@ -182,8 +192,15 @@ export class AuthController {
     // Generate reset token
     const resetToken = user.generatePasswordResetToken();
     await user.save();
-    // In production, send email here
-    logger.info(`Password reset requested for: ${email}`);
+
+    // Send password reset email
+    try {
+      await emailService.sendPasswordResetEmail(email, resetToken, user.name);
+      logger.info(`Password reset email sent to: ${email}`);
+    } catch (error) {
+      logger.error(`Failed to send password reset email to ${email}:`, error);
+      // Don't reveal if email exists, but log the error
+    }
 
     ResponseHandler.success(res, {
       ...(process.env.NODE_ENV === 'development' && { resetToken })
@@ -228,6 +245,15 @@ export class AuthController {
     user.isEmailVerified = true;
     user.emailVerificationToken = undefined;
     await user.save();
+
+    // Send welcome email after verification
+    try {
+      await emailService.sendWelcomeEmail(user.email, user.name);
+      logger.info(`Welcome email sent to: ${user.email}`);
+    } catch (error) {
+      logger.error(`Failed to send welcome email to ${user.email}:`, error);
+      // Don't fail verification if welcome email fails
+    }
 
     logger.info(`Email verified for: ${user.email}`);
 

@@ -8,7 +8,8 @@ import {
   deleteProject,
   addTeamMember,
   removeTeamMember,
-  updateProjectStatus
+  updateProjectStatus,
+  getProjectStats
 } from '@/controllers/projectController';
 import { authenticate, requireRole } from '@/middleware/auth';
 import { validate } from '@/utils/validation';
@@ -51,6 +52,16 @@ router.get(
   '/',
   validate(projectQuerySchema, 'query'),
   getProjects
+);
+
+/**
+ * @route   GET /api/v1/projects/stats
+ * @desc    Get project statistics for authenticated user
+ * @access  Private
+ */
+router.get(
+  '/stats',
+  getProjectStats
 );
 
 /**

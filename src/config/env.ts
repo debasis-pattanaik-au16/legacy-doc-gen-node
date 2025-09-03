@@ -68,7 +68,13 @@ class EnvironmentConfig {
       
       // CORS Configuration
       CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3000',
-      CORS_CREDENTIALS: process.env.CORS_CREDENTIALS === 'true'
+      CORS_CREDENTIALS: process.env.CORS_CREDENTIALS === 'true',
+      
+      // SendGrid Configuration
+      SENDGRID_API_KEY: process.env.SENDGRID_API_KEY || '',
+      SENDGRID_FROM_EMAIL: process.env.SENDGRID_FROM_EMAIL || 'noreply@legacydocgenerator.com',
+      SENDGRID_FROM_NAME: process.env.SENDGRID_FROM_NAME || 'Legacy Doc Generator',
+      FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000'
     };
   }
 

@@ -391,3 +391,43 @@ export const updateProjectStatus = asyncHandler(async (req: AuthenticatedRequest
     }
   }, 'Project status updated successfully');
 });
+
+/**
+ * Get project statistics for authenticated user
+ */
+export const getProjectStats = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return ApiResponse.unauthorized(res, 'User not authenticated');
+  }
+
+  try {
+    // Get all projects for the user
+    const projects = await Project.find({
+      'teamMembers.user': userId
+    }).select('status');
+
+    // Calculate statistics
+    const totalProjects = projects.length;
+    const completedProjects = projects.filter(p => p.status === 'completed').length;
+    const failedProjects = projects.filter(p => p.status === 'failed').length;
+    const activeProjects = projects.filter(p => 
+      ['created', 'uploading', 'uploaded', 'analyzing', 'analyzed', 'generating'].includes(p.status)
+    ).length;
+
+    const stats = {
+      totalProjects,
+      completedProjects,
+      activeProjects,
+      failedProjects
+    };
+
+    logger.info(`Project stats retrieved for user: ${userId}`);
+
+    return ApiResponse.success(res, stats, 'Project statistics retrieved successfully');
+  } catch (error) {
+    logger.error(`Error getting project stats for user ${userId}:`, error);
+    return ApiResponse.error(res, 'Failed to retrieve project statistics', 500);
+  }
+});

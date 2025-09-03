@@ -255,4 +255,8 @@ export interface EnvConfig {
   RATE_LIMIT_MAX_REQUESTS: number;
   CORS_ORIGIN: string;
   CORS_CREDENTIALS: boolean;
+  SENDGRID_API_KEY: string;
+  SENDGRID_FROM_EMAIL: string;
+  SENDGRID_FROM_NAME: string;
+  FRONTEND_URL: string;
 }
