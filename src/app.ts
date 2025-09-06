@@ -15,6 +15,7 @@ import {
 import authRoutes from '@/routes/authRoutes';
 import projectRoutes from '@/routes/projectRoutes';
 import uploadRoutes from '@/routes/uploadRoutes';
+import dependencyRoutes from '@/routes/dependencyRoutes';
 
 /**
  * Express application setup and configuration
@@ -77,6 +78,7 @@ export class App {
     this.app.use('/api/v1/auth', authRoutes);
     this.app.use('/api/v1/projects', projectRoutes);
     this.app.use('/api/v1/projects', uploadRoutes);
+    this.app.use('/api/v1/dependencies', dependencyRoutes);
 
     // 404 handler
     this.app.use('*', (req, res) => {

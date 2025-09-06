@@ -125,7 +125,7 @@ export interface ImportNode {
   line: number;
 }
 
-export type ImportType = 'default' | 'named' | 'namespace' | 'side-effect';
+export type ImportType = 'default' | 'named' | 'namespace' | 'side_effect';
 
 export interface ImportSpecifier {
   imported: string;

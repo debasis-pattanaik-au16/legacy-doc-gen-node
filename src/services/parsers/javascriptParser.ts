@@ -617,8 +617,8 @@ export class JavaScriptParser implements ASTParser {
     return false;
   }
 
-  private getImportType(node: t.ImportDeclaration): 'default' | 'named' | 'namespace' | 'side-effect' {
-    if (node.specifiers.length === 0) return 'side-effect';
+  private getImportType(node: t.ImportDeclaration): 'default' | 'named' | 'namespace' | 'side_effect' {
+    if (node.specifiers.length === 0) return 'side_effect';
     if (node.specifiers.some(spec => t.isImportDefaultSpecifier(spec))) return 'default';
     if (node.specifiers.some(spec => t.isImportNamespaceSpecifier(spec))) return 'namespace';
     return 'named';

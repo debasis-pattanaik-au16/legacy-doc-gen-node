@@ -27,6 +27,98 @@ export class OpenAIService {
   }
 
   /**
+   * Analyze dependency graph and generate architectural insights
+   */
+  public async analyzeDependencyGraph(
+    graph: any,
+    projectContext?: string
+  ): Promise<any> {
+    const prompt = this.buildDependencyAnalysisPrompt(graph, projectContext);
+    
+    try {
+      const response = await this.makeRequest(async () => {
+        return await this.client.chat.completions.create({
+          model: 'gpt-4',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert software architect. Analyze the dependency graph and provide architectural insights, identify potential issues, and suggest improvements. Return structured JSON.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 2000
+        });
+      });
+
+      return this.parseDependencyAnalysisResponse(response.choices[0].message.content || '{}');
+    } catch (error: any) {
+      logger.error('Dependency analysis failed:', error);
+      throw new Error(`Dependency analysis failed: ${error.message}`);
+    }
+  }
+
+
+  /**
+   * Build dependency analysis prompt
+   */
+  private buildDependencyAnalysisPrompt(graph: any, projectContext?: string): string {
+    return `
+Analyze this dependency graph and provide architectural insights:
+
+Graph Summary:
+- Total Nodes: ${graph.metadata?.totalNodes || 0}
+- Total Edges: ${graph.metadata?.totalEdges || 0}
+- Circular Dependencies: ${graph.circularDependencies?.length || 0}
+- External Libraries: ${graph.externalLibraries?.length || 0}
+
+${projectContext ? `Project Context: ${projectContext}` : ''}
+
+Circular Dependencies:
+${graph.circularDependencies?.map((cycle: any) => `- ${cycle.cycle.join(' -> ')}`).join('\n') || 'None'}
+
+External Libraries:
+${graph.externalLibraries?.map((lib: any) => `- ${lib.name} (${lib.usageCount} files)`).join('\n') || 'None'}
+
+Please provide:
+1. Architecture quality assessment
+2. Potential issues and risks
+3. Refactoring suggestions
+4. Performance implications
+5. Maintainability concerns
+
+Return as JSON with structure:
+{
+  "quality": "excellent|good|fair|poor",
+  "issues": [{"type": "string", "severity": "low|medium|high|critical", "description": "string"}],
+  "suggestions": [{"category": "string", "priority": "low|medium|high", "description": "string"}],
+  "metrics": {"coupling": number, "cohesion": number, "complexity": number}
+}`;
+  }
+
+
+  /**
+   * Parse dependency analysis response
+   */
+  private parseDependencyAnalysisResponse(response: string): any {
+    try {
+      return JSON.parse(response);
+    } catch (error) {
+      logger.warn('Failed to parse dependency analysis response:', error);
+      return {
+        quality: 'unknown',
+        issues: [],
+        suggestions: [],
+        metrics: { coupling: 0, cohesion: 0, complexity: 0 }
+      };
+    }
+  }
+
+
+  /**
    * Analyze code with semantic understanding
    */
   public async analyzeCode(
