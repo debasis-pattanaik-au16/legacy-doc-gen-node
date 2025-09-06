@@ -100,6 +100,17 @@ export class ResponseHandler {
   }
 
   /**
+   * Send created response
+   */
+  public static created<T>(
+    res: Response,
+    data: T,
+    message?: string
+  ): Response<ApiSuccessResponse<T>> {
+    return this.success(res, data, message, 201);
+  }
+
+  /**
    * Send internal server error response
    */
   public static internalError(

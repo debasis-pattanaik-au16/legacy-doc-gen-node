@@ -17,9 +17,9 @@ export class OpenAIService {
   private readonly RETRY_DELAY = 2000; // 2 seconds
 
   constructor() {
-    if (!config.OPENAI_API_KEY) {
-      throw new Error('OpenAI API key is required');
-    }
+    // if (!config.OPENAI_API_KEY) {
+    //   throw new Error('OpenAI API key is required');
+    // }
 
     this.client = new OpenAI({
       apiKey: config.OPENAI_API_KEY,

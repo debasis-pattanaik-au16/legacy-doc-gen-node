@@ -119,7 +119,7 @@ export const uploadCodebase = asyncHandler(async (req: AuthenticatedRequest, res
         message: 'Analyzing codebase...'
       });
 
-      // Update project with codebase metadata
+      // Update project with codebase metadata and progress
       const updatedProject = await Project.findByIdAndUpdate(
         projectId,
         {
@@ -132,6 +132,8 @@ export const uploadCodebase = asyncHandler(async (req: AuthenticatedRequest, res
             uploadedAt: new Date(),
             extractedPath: result.projectPath
           },
+          // Update database progress to match in-memory progress
+          'progress.uploadProgress': 100,
           updatedAt: new Date()
         },
         { new: true }
