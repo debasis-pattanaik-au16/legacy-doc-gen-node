@@ -159,7 +159,7 @@ const complexityMetricsSchema = new Schema({
  */
 const analysisResultSchema = new Schema<IAnalysisResult>({
   projectId: {
-    type: String,
+    type: Schema.Types.ObjectId,
     ref: 'Project',
     required: [true, 'Project ID is required']
   },
@@ -186,8 +186,8 @@ const analysisResultSchema = new Schema<IAnalysisResult>({
 });
 
 // Indexes for performance
-analysisResultSchema.index({ projectId: 1 });
-analysisResultSchema.index({ generatedAt: -1 });
+analysisResultSchema.index({ projectId: 1 }, { unique: true });
+analysisResultSchema.index({ createdAt: -1 });
 analysisResultSchema.index({ 'components.type': 1 });
 analysisResultSchema.index({ 'apiEndpoints.method': 1 });
 

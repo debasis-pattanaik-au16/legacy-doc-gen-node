@@ -25,7 +25,7 @@ import { logger } from '@/utils/logger';
  * and component relationship mapping with AI-powered insights
  */
 export class DependencyAnalyzer {
-  private dependencyCache = new Map<string, UnifiedAST>();
+  public dependencyCache = new Map<string, UnifiedAST>();
   private externalLibraries = new Map<string, ExternalLibrary>();
   private packageJsonCache = new Map<string, any>();
 

@@ -150,7 +150,7 @@ export interface ComplexityMetrics {
 
 export interface IAnalysisResult extends Document {
   _id: string;
-  projectId: string;
+  projectId: mongoose.Types.ObjectId;
   components: Component[];
   dependencies: Dependency[];
   apiEndpoints: ApiEndpoint[];

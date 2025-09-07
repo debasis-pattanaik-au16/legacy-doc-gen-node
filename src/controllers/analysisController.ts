@@ -39,21 +39,11 @@ export class AnalysisController {
     // Verify project exists and user has access
     const project = await Project.findOne({ 
       _id: projectId, 
-      $or: [
-        { owner: userId },
-        { 'team.user': userId }
-      ]
+      'teamMembers.user': userId
     });
 
     if (!project) {
       throw new AppError('Project not found or access denied', 404);
-    }
-
-    // Check if analysis already exists
-    const existingAnalysis = await AnalysisResult.findOne({ projectId });
-    if (existingAnalysis) {
-      ResponseHandler.success(res, existingAnalysis, 'Analysis already exists');
-      return;
     }
 
     // Start analysis process
@@ -77,10 +67,7 @@ export class AnalysisController {
     // Verify project access
     const project = await Project.findOne({ 
       _id: projectId, 
-      $or: [
-        { owner: userId },
-        { 'team.user': userId }
-      ]
+      'teamMembers.user': userId
     });
 
     if (!project) {
@@ -146,7 +133,8 @@ export class AnalysisController {
     // Verify project ownership
     const project = await Project.findOne({ 
       _id: projectId, 
-      owner: userId 
+      'teamMembers.user': userId,
+      'teamMembers.role': 'owner'
     });
 
     if (!project) {
@@ -165,7 +153,7 @@ export class AnalysisController {
     try {
       logger.info(`Starting analysis for project: ${project._id}`);
 
-      const projectPath = path.join(process.cwd(), 'uploads', 'extracted', project._id);
+      const projectPath = path.join(process.cwd(), 'uploads', 'extracted', project._id.toString());
       
       // Check if project files exist
       try {
@@ -175,20 +163,43 @@ export class AnalysisController {
       }
 
       // Perform dependency analysis using existing method
+      logger.info(`Starting dependency analysis for path: ${projectPath}`);
       const dependencyResult = await this.dependencyAnalyzer.analyzeDependencies(projectPath);
+      logger.info(`Dependency analysis completed. Cache size: ${this.dependencyAnalyzer.dependencyCache.size}`);
 
-      // Create analysis result document
-      const analysisResult = new AnalysisResult({
-        projectId: project._id,
-        components: this.extractComponents(dependencyResult),
-        dependencies: this.extractDependencies(dependencyResult),
-        apiEndpoints: [], // Will be populated by specific parsers
-        databaseSchemas: [], // Will be populated by specific parsers
-        architecturePatterns: this.identifyArchitecturePatterns(dependencyResult),
-        complexityMetrics: this.calculateComplexityMetrics(dependencyResult)
+      // Extract data from analysis results
+      const components = this.extractComponents(dependencyResult);
+      const dependencies = this.extractDependencies(dependencyResult);
+      const architecturePatterns = this.identifyArchitecturePatterns(dependencyResult);
+      const complexityMetrics = this.calculateComplexityMetrics(dependencyResult);
+
+      logger.info(`Extracted ${components.length} components, ${dependencies.length} dependencies`);
+
+      // Create or update analysis result document using upsert
+      const analysisResult = await AnalysisResult.findOneAndUpdate(
+        { projectId: project._id },
+        {
+          projectId: project._id,
+          components,
+          dependencies,
+          apiEndpoints: [], // Will be populated by specific parsers
+          databaseSchemas: [], // Will be populated by specific parsers
+          architecturePatterns,
+          complexityMetrics
+        },
+        { 
+          upsert: true, 
+          new: true,
+          runValidators: true 
+        }
+      );
+
+      // Update project status to analyzed
+      await Project.findByIdAndUpdate(project._id, {
+        status: 'analyzed',
+        'uploadMetadata.analysisProgress': 100,
+        'progress.analysisProgress': 100
       });
-
-      await analysisResult.save();
 
       logger.info(`Analysis completed for project: ${project._id}`);
       return analysisResult;
@@ -205,20 +216,24 @@ export class AnalysisController {
   private extractComponents(dependencyResult: any): any[] {
     const components = [];
     
-    if (dependencyResult.asts) {
-      for (const [filePath, ast] of dependencyResult.asts.entries()) {
+    // The dependency analyzer returns parsed ASTs in the cache
+    // We need to access them through the analyzer instance
+    if (this.dependencyAnalyzer.dependencyCache) {
+      for (const [filePath, ast] of this.dependencyAnalyzer.dependencyCache.entries()) {
         for (const component of ast.components) {
-          components.push({
+          const componentData: any = {
             name: component.name,
-            type: component.type,
+            type: this.mapComponentType(component.type),
             filePath: filePath,
             startLine: component.startLine,
             endLine: component.endLine,
-            description: component.description,
-            parameters: component.parameters || [],
-            returnType: component.returnType,
-            dependencies: component.dependencies || []
-          });
+            description: component.description || '',
+            parameters: this.extractParametersAsStrings(component),
+            returnType: this.extractReturnTypeAsString(component),
+            dependencies: []
+          };
+
+          components.push(componentData);
         }
       }
     }
@@ -226,21 +241,105 @@ export class AnalysisController {
     return components;
   }
 
+  /**
+   * Map parser component types to valid MongoDB enum values
+   */
+  private mapComponentType(type: string): string {
+    const typeMapping: Record<string, string> = {
+      'function': 'function',
+      'class': 'class',
+      'interface': 'module',
+      'type': 'module',
+      'enum': 'module',
+      'variable': 'component',
+      'constant': 'component',
+      'method': 'function',
+      'constructor': 'function',
+      'property': 'component'
+    };
+
+    return typeMapping[type] || 'component';
+  }
+
+  /**
+   * Extract parameters as string array for MongoDB storage
+   */
+  private extractParametersAsStrings(component: any): string[] {
+    if (!component.parameters || !Array.isArray(component.parameters)) {
+      return [];
+    }
+
+    return component.parameters.map((param: any) => {
+      if (typeof param === 'string') return param;
+      if (param.name) return param.name;
+      return 'param';
+    });
+  }
+
+  /**
+   * Extract return type as string for MongoDB storage
+   */
+  private extractReturnTypeAsString(component: any): string {
+    if (!component.returnType) return 'void';
+    
+    if (typeof component.returnType === 'string') {
+      return component.returnType;
+    }
+    
+    if (typeof component.returnType === 'object' && component.returnType.name) {
+      return component.returnType.name;
+    }
+    
+    return 'any';
+  }
+
   private extractDependencies(dependencyResult: any): any[] {
     const dependencies = [];
     
+    // Extract dependencies from the dependency graph
     if (dependencyResult.graph && dependencyResult.graph.edges) {
       for (const edge of dependencyResult.graph.edges) {
         dependencies.push({
           from: edge.source,
           to: edge.target,
-          type: edge.type || 'import',
-          filePath: edge.filePath || edge.source
+          type: this.mapDependencyType(edge.type || 'import'),
+          filePath: edge.source
         });
       }
     }
 
+    // Also extract dependencies from AST imports
+    if (this.dependencyAnalyzer.dependencyCache) {
+      for (const [filePath, ast] of this.dependencyAnalyzer.dependencyCache.entries()) {
+        for (const dependency of ast.dependencies) {
+          dependencies.push({
+            from: filePath,
+            to: dependency.name,
+            type: this.mapDependencyType(dependency.type),
+            filePath: filePath
+          });
+        }
+      }
+    }
+
     return dependencies;
+  }
+
+  /**
+   * Map dependency types to valid MongoDB enum values
+   */
+  private mapDependencyType(type: string): string {
+    const typeMapping: Record<string, string> = {
+      'import': 'import',
+      'require': 'require',
+      'call': 'call',
+      'inheritance': 'inheritance',
+      'runtime': 'import',
+      'development': 'import',
+      'dynamic_import': 'import'
+    };
+
+    return typeMapping[type] || 'import';
   }
 
   private identifyArchitecturePatterns(dependencyResult: any): string[] {
@@ -262,11 +361,33 @@ export class AnalysisController {
   }
 
   private calculateComplexityMetrics(dependencyResult: any): any {
+    let totalComplexity = 0;
+    let totalLinesOfCode = 0;
+    let fileCount = 0;
+
+    // Calculate metrics from parsed ASTs
+    if (this.dependencyAnalyzer.dependencyCache) {
+      for (const [filePath, ast] of this.dependencyAnalyzer.dependencyCache.entries()) {
+        fileCount++;
+        totalLinesOfCode += ast.metadata.codeLines || 0;
+        
+        // Sum up component complexities
+        for (const component of ast.components) {
+          if (component.complexity) {
+            totalComplexity += component.complexity.cyclomaticComplexity || 1;
+          }
+        }
+      }
+    }
+
+    const avgComplexity = fileCount > 0 ? totalComplexity / fileCount : 0;
+    const maintainabilityIndex = Math.max(0, Math.min(100, 171 - 5.2 * Math.log(totalLinesOfCode || 1) - 0.23 * avgComplexity));
+
     return {
-      cyclomaticComplexity: dependencyResult.metrics?.averageComplexity || 0,
-      linesOfCode: dependencyResult.metrics?.totalLines || 0,
-      maintainabilityIndex: dependencyResult.metrics?.maintainabilityIndex || 75,
-      technicalDebt: dependencyResult.metrics?.technicalDebt || 0
+      cyclomaticComplexity: totalComplexity,
+      linesOfCode: totalLinesOfCode,
+      maintainabilityIndex: Math.round(maintainabilityIndex),
+      technicalDebt: Math.max(0, 100 - maintainabilityIndex)
     };
   }
 

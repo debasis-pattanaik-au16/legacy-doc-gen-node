@@ -31,7 +31,7 @@ export const corsOptions = {
 // Rate limiting configuration
 export const rateLimitConfig = rateLimit({
   windowMs: config.RATE_LIMIT_WINDOW_MS,
-  max: config.RATE_LIMIT_MAX_REQUESTS,
+  max: config.NODE_ENV === 'development' ? 1000 : config.RATE_LIMIT_MAX_REQUESTS, // Higher limit in development
   message: {
     success: false,
     error: {

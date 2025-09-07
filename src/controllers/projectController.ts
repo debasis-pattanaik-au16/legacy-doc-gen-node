@@ -74,7 +74,7 @@ export const createProject = asyncHandler(async (req: AuthenticatedRequest, res:
  */
 export const getProjects = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id;
-  const { page = 1, limit = 10, status, type } = req.query;
+  const { page = 1, limit = 10, status, type, search, sortBy = 'updatedAt', sortOrder = 'desc' } = req.query;
 
   if (!userId) {
     return ApiResponse.unauthorized(res, 'User not authenticated');
@@ -85,23 +85,35 @@ export const getProjects = asyncHandler(async (req: AuthenticatedRequest, res: R
     'teamMembers.user': userId
   };
 
-  if (status) {
+  if (status && status !== 'all') {
     filter.status = status;
   }
 
-  if (type) {
+  if (type && type !== 'all') {
     filter.type = type;
+  }
+
+  // Add search functionality
+  if (search) {
+    filter.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } }
+    ];
   }
 
   const pageNum = parseInt(page as string);
   const limitNum = parseInt(limit as string);
   const skip = (pageNum - 1) * limitNum;
 
+  // Build sort object
+  const sortObj: any = {};
+  sortObj[sortBy as string] = sortOrder === 'asc' ? 1 : -1;
+
   const [projects, total] = await Promise.all([
     Project.find(filter)
       .select('name description type status progress createdAt updatedAt teamMembers')
       .populate('teamMembers.user', 'name email')
-      .sort({ updatedAt: -1 })
+      .sort(sortObj)
       .skip(skip)
       .limit(limitNum),
     Project.countDocuments(filter)
