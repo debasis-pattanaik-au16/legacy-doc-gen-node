@@ -247,6 +247,11 @@ export interface EnvConfig {
   OPENAI_API_KEY: string;
   OPENAI_MODEL: string;
   OPENAI_MAX_TOKENS: number;
+  GEMINI_API_KEY: string;
+  GEMINI_MODEL: string;
+  GEMINI_MAX_TOKENS: number;
+  AI_SERVICE_PROVIDER: string;
+  AI_SERVICE_FALLBACK: boolean;
   MAX_FILE_SIZE: number;
   UPLOAD_PATH: string;
   TEMP_PATH: string;

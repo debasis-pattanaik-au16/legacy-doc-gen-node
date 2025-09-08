@@ -56,6 +56,15 @@ class EnvironmentConfig {
       OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4',
       OPENAI_MAX_TOKENS: parseInt(process.env.OPENAI_MAX_TOKENS || '4000', 10),
       
+      // Gemini Configuration
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+      GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+      GEMINI_MAX_TOKENS: parseInt(process.env.GEMINI_MAX_TOKENS || '4000', 10),
+      
+      // AI Service Configuration
+      AI_SERVICE_PROVIDER: process.env.AI_SERVICE_PROVIDER || 'openai', // 'openai' | 'gemini' | 'both'
+      AI_SERVICE_FALLBACK: process.env.AI_SERVICE_FALLBACK === 'true',
+      
       // File Upload Configuration
       MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || '524288000', 10), // 500MB
       UPLOAD_PATH: process.env.UPLOAD_PATH || './uploads',

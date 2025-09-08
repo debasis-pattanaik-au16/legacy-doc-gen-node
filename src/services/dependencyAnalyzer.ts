@@ -16,7 +16,7 @@ import {
 import { UnifiedAST, ImportNode, ComponentNode } from '@/types/ast';
 import { javascriptParser } from '@/services/parsers/javascriptParser';
 import { pythonParser } from '@/services/parsers/pythonParser';
-import { openaiService } from '@/services/openaiService';
+import { aiServiceManager } from '@/services/aiServiceManager';
 import { logger } from '@/utils/logger';
 
 /**
@@ -252,6 +252,19 @@ export class DependencyAnalyzer {
     for (const file of files) {
       try {
         const content = await fs.readFile(file, 'utf-8');
+        
+        // Additional validation to catch problematic files
+        if (content.includes('\u0000')) {
+          logger.warn(`Skipping file with null bytes: ${file}`);
+          continue;
+        }
+        
+        // Skip empty or very small files that might be problematic
+        if (content.trim().length < 10) {
+          logger.debug(`Skipping empty or very small file: ${file}`);
+          continue;
+        }
+        
         const ext = path.extname(file);
         
         let ast: UnifiedAST;
@@ -266,7 +279,15 @@ export class DependencyAnalyzer {
         results.set(file, ast);
         this.dependencyCache.set(file, ast);
       } catch (error: any) {
-        logger.warn(`Failed to parse ${file}:`, error.message);
+        // Enhanced error logging for debugging
+        const fileName = path.basename(file);
+        if (fileName.startsWith('._')) {
+          logger.warn(`Detected macOS metadata file that should have been filtered: ${file}`);
+        } else if (error.message.includes('Unexpected character')) {
+          logger.warn(`File contains invalid characters: ${file} - ${error.message}`);
+        } else {
+          logger.warn(`Failed to parse ${file}: ${error.message}`);
+        }
       }
     }
 
@@ -435,6 +456,27 @@ export class DependencyAnalyzer {
   }
 
   private shouldIncludeFile(filePath: string, options: DependencyAnalysisOptions): boolean {
+    const fileName = path.basename(filePath);
+    
+    // Exclude macOS metadata files (._*) that cause parser errors
+    if (fileName.startsWith('._')) {
+      return false;
+    }
+    
+    // Exclude other problematic files
+    const problematicPatterns = [
+      /\.DS_Store$/,           // macOS folder metadata
+      /Thumbs\.db$/,           // Windows thumbnail cache
+      /desktop\.ini$/,         // Windows folder config
+      /\.(tmp|temp|bak|swp)$/, // Temporary/backup files
+      /~$/,                    // Backup files
+      /\.(log|pid|lock)$/      // Log/process/lock files
+    ];
+    
+    if (problematicPatterns.some(pattern => pattern.test(fileName))) {
+      return false;
+    }
+    
     if (options.includePatterns.length > 0) {
       return options.includePatterns.some(pattern => filePath.match(pattern));
     }
@@ -482,14 +524,12 @@ export class DependencyAnalyzer {
 
   private async generateInsights(graph: DependencyGraph, relationships: ComponentRelationship[]): Promise<any[]> {
     try {
-      // Try AI-powered analysis first if API key is available
-      if (process.env.OPENAI_API_KEY) {
-        try {
-          const analysis = await openaiService.analyzeDependencyGraph(graph);
-          return analysis.issues || [];
-        } catch (aiError: any) {
-          logger.warn('AI analysis failed, falling back to basic insights:', aiError.message);
-        }
+      // Try AI-powered analysis first if API service is available
+      try {
+        const analysis = await aiServiceManager.analyzeDependencyGraph(graph);
+        return analysis.issues || [];
+      } catch (aiError: any) {
+        logger.warn('AI analysis failed, falling back to basic insights:', aiError.message);
       }
       
       // Fallback to basic rule-based insights
@@ -545,14 +585,12 @@ export class DependencyAnalyzer {
 
   private async generateRecommendations(graph: DependencyGraph, insights: any[]): Promise<any[]> {
     try {
-      // Try AI-powered recommendations first if API key is available
-      if (process.env.OPENAI_API_KEY) {
-        try {
-          const analysis = await openaiService.analyzeDependencyGraph(graph);
-          return analysis.suggestions || [];
-        } catch (aiError: any) {
-          logger.warn('AI recommendations failed, falling back to basic recommendations:', aiError.message);
-        }
+      // Try AI-powered recommendations first if API service is available
+      try {
+        const analysis = await aiServiceManager.analyzeDependencyGraph(graph);
+        return analysis.suggestions || [];
+      } catch (aiError: any) {
+        logger.warn('AI recommendations failed, falling back to basic recommendations:', aiError.message);
       }
       
       // Fallback to basic rule-based recommendations
@@ -651,7 +689,17 @@ export class DependencyAnalyzer {
       analyzeComponents: true,
       includeDevDependencies: false,
       maxDepth: 10,
-      excludePatterns: ['node_modules', 'dist', 'build', '__pycache__'],
+      excludePatterns: [
+        'node_modules', 
+        'dist', 
+        'build', 
+        '__pycache__',
+        '\\.git',
+        '\\.DS_Store',
+        '\\._.*',  // macOS metadata files
+        'Thumbs\\.db',
+        'desktop\\.ini'
+      ],
       includePatterns: []
     };
   }

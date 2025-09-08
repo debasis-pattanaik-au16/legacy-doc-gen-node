@@ -17,6 +17,7 @@ import projectRoutes from '@/routes/projectRoutes';
 import uploadRoutes from '@/routes/uploadRoutes';
 import dependencyRoutes from '@/routes/dependencyRoutes';
 import analysisRoutes from '@/routes/analysisRoutes';
+import aiServiceRoutes from '@/routes/aiServiceRoutes';
 
 /**
  * Express application setup and configuration
@@ -81,6 +82,7 @@ export class App {
     this.app.use('/api/v1/projects', uploadRoutes);
     this.app.use('/api/v1/dependencies', dependencyRoutes);
     this.app.use('/api/v1/analysis', analysisRoutes);
+    this.app.use('/api/v1/ai-service', aiServiceRoutes);
 
     // 404 handler
     this.app.use('*', (req, res) => {
