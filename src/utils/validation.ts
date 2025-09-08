@@ -133,6 +133,11 @@ export const projectValidation = {
       .messages({
         'string.max': 'Description cannot exceed 500 characters'
       }),
+    type: Joi.string()
+      .valid('web', 'mobile', 'desktop', 'api', 'library', 'other')
+      .messages({
+        'any.only': 'Project type must be one of: web, mobile, desktop, api, library, other'
+      }),
     status: Joi.string()
       .valid('uploading', 'analyzing', 'completed', 'error')
   }),
@@ -179,6 +184,13 @@ export const queryValidation = {
       .min(1)
       .max(100)
       .default(10),
+    sortBy: Joi.string()
+      .valid('createdAt', 'updatedAt', 'name', 'status')
+      .default('updatedAt'),
+    sortOrder: Joi.string()
+      .valid('asc', 'desc')
+      .default('desc'),
+    // Keep legacy sort parameter for backward compatibility
     sort: Joi.string()
       .valid('createdAt', '-createdAt', 'name', '-name', 'status', '-status')
       .default('-createdAt')
@@ -186,19 +198,46 @@ export const queryValidation = {
 
   projectFilters: Joi.object({
     status: Joi.string()
-      .valid('uploading', 'analyzing', 'completed', 'error'),
-    language: Joi.string()
-      .trim(),
+      .valid('created', 'uploading', 'uploaded', 'analyzing', 'analyzed', 'generating', 'completed', 'failed'),
+    type: Joi.string()
+      .valid('web', 'mobile', 'desktop', 'api', 'library', 'other'),
     search: Joi.string()
       .trim()
       .max(100)
   })
 };
 
+// Combined project query schema with pagination and filters
+export const projectQuerySchema = Joi.object({
+  // Pagination
+  page: Joi.number()
+    .integer()
+    .min(1)
+    .default(1),
+  limit: Joi.number()
+    .integer()
+    .min(1)
+    .max(100)
+    .default(10),
+  sortBy: Joi.string()
+    .valid('createdAt', 'updatedAt', 'name', 'status')
+    .default('updatedAt'),
+  sortOrder: Joi.string()
+    .valid('asc', 'desc')
+    .default('desc'),
+  // Filters
+  status: Joi.string()
+    .valid('created', 'uploading', 'uploaded', 'analyzing', 'analyzed', 'generating', 'completed', 'failed'),
+  type: Joi.string()
+    .valid('web', 'mobile', 'desktop', 'api', 'library', 'other'),
+  search: Joi.string()
+    .trim()
+    .max(100)
+});
+
 // Export individual schemas for backward compatibility
 export const projectCreateSchema = projectValidation.create;
 export const projectUpdateSchema = projectValidation.update;
-export const projectQuerySchema = queryValidation.pagination;
 export const teamMemberSchema = projectValidation.addTeamMember;
 
 // MongoDB ObjectId validation

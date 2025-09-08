@@ -101,6 +101,7 @@ export const getProjects = asyncHandler(async (req: AuthenticatedRequest, res: R
     ];
   }
 
+
   const pageNum = parseInt(page as string);
   const limitNum = parseInt(limit as string);
   const skip = (pageNum - 1) * limitNum;
@@ -186,6 +187,7 @@ export const updateProject = asyncHandler(async (req: AuthenticatedRequest, res:
   const { name, description, type } = req.body;
   const userId = req.user?.id;
 
+
   if (!userId) {
     return ApiResponse.unauthorized(res, 'User not authenticated');
   }
@@ -214,24 +216,37 @@ export const updateProject = asyncHandler(async (req: AuthenticatedRequest, res:
     }
   }
 
-  // Update project fields
-  if (name) project.name = name;
-  if (description !== undefined) project.description = description;
-  if (type) project.type = type;
+  // Build update object
+  const updateFields: any = {};
+  if (name) updateFields.name = name;
+  if (description !== undefined) updateFields.description = description;
+  if (type) updateFields.type = type;
 
-  await project.save();
+  const updatedProject = await Project.findOneAndUpdate(
+    {
+      _id: id,
+      'teamMembers.user': userId,
+      'teamMembers.permissions': { $in: ['write', 'admin'] }
+    },
+    updateFields,
+    { new: true, runValidators: true }
+  );
 
-  logger.info(`Project updated: ${project.id} by user: ${userId}`);
+  if (!updatedProject) {
+    return ApiResponse.error(res, 'Project not found or insufficient permissions', 403);
+  }
+
+  logger.info(`Project updated: ${updatedProject.id} by user: ${userId}`);
 
   return ApiResponse.success(res, {
     project: {
-      id: project.id,
-      name: project.name,
-      description: project.description,
-      type: project.type,
-      status: project.status,
-      progress: project.progress,
-      updatedAt: project.updatedAt
+      id: updatedProject.id,
+      name: updatedProject.name,
+      description: updatedProject.description,
+      type: updatedProject.type,
+      status: updatedProject.status,
+      progress: updatedProject.progress,
+      updatedAt: updatedProject.updatedAt
     }
   }, 'Project updated successfully');
 });
