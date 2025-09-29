@@ -109,6 +109,78 @@ export const optionalAuth = async (
 };
 
 /**
+ * Flexible authentication middleware that accepts token from header or query params
+ * Useful for download/view endpoints that need to work with direct links
+ */
+export const authenticateFlexible = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    let token: string | null = null;
+    
+    console.log('[authenticateFlexible] Starting auth check for:', req.path);
+    console.log('[authenticateFlexible] Query params:', Object.keys(req.query));
+    console.log('[authenticateFlexible] Has Authorization header:', !!req.headers.authorization);
+    
+    // Try to get token from Authorization header first
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+      console.log('[authenticateFlexible] Token found in header');
+    }
+    
+    // If no header token, try query parameter
+    if (!token && req.query.token && typeof req.query.token === 'string') {
+      token = req.query.token;
+      console.log('[authenticateFlexible] Token found in query param');
+    }
+    
+    if (!token) {
+      console.log('[authenticateFlexible] No token found in header or query');
+      ResponseHandler.unauthorized(res, 'Access token required');
+      return;
+    }
+    
+    console.log('[authenticateFlexible] Token present, length:', token.length);
+
+    // Verify JWT token
+    const decoded = jwt.verify(token, config.JWT_SECRET) as JwtPayload;
+    
+    // Find user by ID
+    const user = await User.findById(decoded.userId).select('+lastLogin');
+    
+    if (!user) {
+      ResponseHandler.unauthorized(res, 'Invalid token - user not found');
+      return;
+    }
+
+    // Check if user is active (not deleted/suspended)
+    if (!user.isEmailVerified && config.NODE_ENV === 'production') {
+      ResponseHandler.unauthorized(res, 'Email verification required');
+      return;
+    }
+
+    // Attach user to request object
+    req.user = user;
+    next();
+
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) {
+      ResponseHandler.unauthorized(res, 'Invalid token');
+      return;
+    }
+    if (error instanceof jwt.TokenExpiredError) {
+      ResponseHandler.unauthorized(res, 'Token expired');
+      return;
+    }
+    
+    next(new AppError('Authentication failed', 401));
+  }
+};
+
+/**
  * Refresh token validation middleware
  */
 export const validateRefreshToken = async (

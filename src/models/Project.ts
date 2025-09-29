@@ -16,6 +16,11 @@ const projectSchema = new Schema<IProject>({
     trim: true,
     maxlength: [500, 'Description cannot exceed 500 characters']
   },
+  ownerId: {
+    type: String,
+    ref: 'User',
+    required: [true, 'Project owner is required']
+  },
   type: {
     type: String,
     enum: ['web', 'mobile', 'desktop', 'api', 'library', 'other'],

@@ -3,6 +3,7 @@ import morgan from 'morgan';
 import cors from 'cors';
 import { config } from '@/config/env';
 import { database } from '@/config/database';
+import { fileStorageService } from '@/services/fileStorageService';
 import { logger } from '@/utils/logger';
 import { ResponseHandler } from '@/utils/response';
 import { errorHandler, notFoundHandler } from '@/middleware/errorHandler';
@@ -18,6 +19,7 @@ import uploadRoutes from '@/routes/uploadRoutes';
 import dependencyRoutes from '@/routes/dependencyRoutes';
 import analysisRoutes from '@/routes/analysisRoutes';
 import aiServiceRoutes from '@/routes/aiServiceRoutes';
+import documentationRoutes from '@/routes/documentationRoutes';
 
 /**
  * Express application setup and configuration
@@ -83,6 +85,7 @@ export class App {
     this.app.use('/api/v1/dependencies', dependencyRoutes);
     this.app.use('/api/v1/analysis', analysisRoutes);
     this.app.use('/api/v1/ai-service', aiServiceRoutes);
+    this.app.use('/api/v1/documentation', documentationRoutes);
 
     // 404 handler
     this.app.use('*', (req, res) => {
@@ -108,13 +111,17 @@ export class App {
     try {
       // Connect to database
       await database.connect();
+      
+      // Initialize file storage service
+      await fileStorageService.initialize();
 
       // Start server
       this.app.listen(config.PORT, () => {
         logger.info(`🚀 Server started successfully`, {
           port: config.PORT,
           environment: config.NODE_ENV,
-          apiVersion: config.API_VERSION
+          apiVersion: config.API_VERSION,
+          storage: 'File storage service initialized'
         });
       });
 

@@ -190,6 +190,37 @@ export interface IDocumentation extends Document {
   exportFormats: string[];
 }
 
+// Documentation Job Types
+export interface IDocumentationJob extends Document {
+  _id: string;
+  projectId: mongoose.Types.ObjectId;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  currentStep: string;
+  sections: string[];
+  generatedFiles: {
+    readme?: string;
+    apiDocs?: string;
+    architecture?: string;
+  };
+  startedAt: Date;
+  completedAt?: Date;
+  errorMessage?: string;
+  errorDetails?: {
+    step: string;
+    message: string;
+    stack?: string;
+    timestamp: Date;
+  };
+  userId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  updateProgress(progress: number, step: string): Promise<IDocumentationJob>;
+  markCompleted(files: { readme?: string; apiDocs?: string; architecture?: string }): Promise<IDocumentationJob>;
+  markFailed(error: string, step?: string, stack?: string): Promise<IDocumentationJob>;
+  getExecutionTime(): number;
+}
+
 // Express Request Extensions
 export interface AuthenticatedRequest extends Request {
   user?: IUser;
