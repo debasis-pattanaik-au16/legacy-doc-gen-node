@@ -69,6 +69,7 @@ class EnvironmentConfig {
       MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || '524288000', 10), // 500MB
       UPLOAD_PATH: process.env.UPLOAD_PATH || './uploads',
       TEMP_PATH: process.env.TEMP_PATH || './temp',
+      STORAGE_PATH: process.env.STORAGE_PATH || './storage',
       
       // Security Configuration
       BCRYPT_ROUNDS: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
@@ -83,7 +84,39 @@ class EnvironmentConfig {
       SENDGRID_API_KEY: process.env.SENDGRID_API_KEY || '',
       SENDGRID_FROM_EMAIL: process.env.SENDGRID_FROM_EMAIL || 'noreply@legacydocgenerator.com',
       SENDGRID_FROM_NAME: process.env.SENDGRID_FROM_NAME || 'Legacy Doc Generator',
-      FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000'
+      FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
+      
+      // Cloud Storage Configuration
+      STORAGE_PROVIDER: process.env.STORAGE_PROVIDER || 'local', // 'local' | 'oracle_cloud' | 'aws_s3' | 'azure_blob' | 'gcp'
+      
+      // Oracle Cloud Object Storage
+      OCI_NAMESPACE: process.env.OCI_NAMESPACE || '',
+      OCI_BUCKET_NAME: process.env.OCI_BUCKET_NAME || '',
+      OCI_REGION: process.env.OCI_REGION || '',
+      OCI_TENANCY_ID: process.env.OCI_TENANCY_ID || '',
+      OCI_USER_ID: process.env.OCI_USER_ID || '',
+      OCI_FINGERPRINT: process.env.OCI_FINGERPRINT || '',
+      OCI_PRIVATE_KEY_PATH: process.env.OCI_PRIVATE_KEY_PATH || '',
+      OCI_PUBLIC_URL_EXPIRY: parseInt(process.env.OCI_PUBLIC_URL_EXPIRY || '3600', 10),
+      
+      // AWS S3
+      AWS_S3_BUCKET: process.env.AWS_S3_BUCKET || '',
+      AWS_REGION: process.env.AWS_REGION || '',
+      AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || '',
+      AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || '',
+      AWS_URL_EXPIRY: parseInt(process.env.AWS_URL_EXPIRY || '3600', 10),
+      
+      // Azure Blob Storage
+      AZURE_STORAGE_ACCOUNT: process.env.AZURE_STORAGE_ACCOUNT || '',
+      AZURE_STORAGE_KEY: process.env.AZURE_STORAGE_KEY || '',
+      AZURE_CONTAINER_NAME: process.env.AZURE_CONTAINER_NAME || '',
+      AZURE_URL_EXPIRY: parseInt(process.env.AZURE_URL_EXPIRY || '3600', 10),
+      
+      // Google Cloud Storage
+      GCP_PROJECT_ID: process.env.GCP_PROJECT_ID || '',
+      GCP_BUCKET_NAME: process.env.GCP_BUCKET_NAME || '',
+      GCP_KEY_FILE_PATH: process.env.GCP_KEY_FILE_PATH || '',
+      GCP_URL_EXPIRY: parseInt(process.env.GCP_URL_EXPIRY || '3600', 10)
     };
   }
 

@@ -21,6 +21,8 @@
   "author": "Legacy Doc Generator Team",
   "license": "MIT",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.899.0",
+    "@aws-sdk/s3-request-presigner": "^3.899.0",
     "@babel/generator": "^7.28.3",
     "@babel/parser": "^7.28.4",
     "@babel/traverse": "^7.28.4",
@@ -45,6 +47,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.7",
+    "oci-sdk": "^2.118.1",
     "openai": "^4.20.1",
     "yauzl": "^2.10.0"
   },

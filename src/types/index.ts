@@ -286,6 +286,7 @@ export interface EnvConfig {
   MAX_FILE_SIZE: number;
   UPLOAD_PATH: string;
   TEMP_PATH: string;
+  STORAGE_PATH: string;
   BCRYPT_ROUNDS: number;
   RATE_LIMIT_WINDOW_MS: number;
   RATE_LIMIT_MAX_REQUESTS: number;
@@ -295,4 +296,36 @@ export interface EnvConfig {
   SENDGRID_FROM_EMAIL: string;
   SENDGRID_FROM_NAME: string;
   FRONTEND_URL: string;
+  
+  // Cloud Storage Configuration
+  STORAGE_PROVIDER: string;
+  
+  // Oracle Cloud Object Storage
+  OCI_NAMESPACE: string;
+  OCI_BUCKET_NAME: string;
+  OCI_REGION: string;
+  OCI_TENANCY_ID: string;
+  OCI_USER_ID: string;
+  OCI_FINGERPRINT: string;
+  OCI_PRIVATE_KEY_PATH: string;
+  OCI_PUBLIC_URL_EXPIRY: number;
+  
+  // AWS S3
+  AWS_S3_BUCKET: string;
+  AWS_REGION: string;
+  AWS_ACCESS_KEY_ID: string;
+  AWS_SECRET_ACCESS_KEY: string;
+  AWS_URL_EXPIRY: number;
+  
+  // Azure Blob Storage
+  AZURE_STORAGE_ACCOUNT: string;
+  AZURE_STORAGE_KEY: string;
+  AZURE_CONTAINER_NAME: string;
+  AZURE_URL_EXPIRY: number;
+  
+  // Google Cloud Storage
+  GCP_PROJECT_ID: string;
+  GCP_BUCKET_NAME: string;
+  GCP_KEY_FILE_PATH: string;
+  GCP_URL_EXPIRY: number;
 }
