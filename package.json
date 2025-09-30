@@ -9,6 +9,8 @@
     "start:prod": "NODE_ENV=production node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/server.ts",
     "test": "jest",
+    "test:storage": "ts-node -r tsconfig-paths/register src/scripts/test-storage.ts",
+    "test:oracle": "ts-node -r tsconfig-paths/register src/scripts/test-oracle-upload.ts",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix"
   },
