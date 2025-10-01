@@ -18,24 +18,33 @@ export interface IDocumentationJob extends Document {
     components?: string;
     dependencies?: string;
   };
-  // Cloud storage URLs (for future S3 integration)
-  storageUrls?: {
+  // Cloud storage URLs
+  cloudStorageUrls?: {
     readme?: string;
     apiDocs?: string;
     architecture?: string;
     components?: string;
     dependencies?: string;
-    archiveUrl?: string;
+    zipArchive?: string;
   };
-  // Storage metadata
-  storageProvider?: 'local' | 's3' | 'azure' | 'gcp';
-  storageKeys?: {
+  // Cloud storage keys (internal paths in storage)
+  cloudStorageKeys?: {
     readme?: string;
     apiDocs?: string;
     architecture?: string;
     components?: string;
     dependencies?: string;
-    archiveKey?: string;
+    zipArchive?: string;
+  };
+  // Storage provider type
+  cloudStorageProvider?: 'local' | 'oracle_cloud' | 'aws_s3' | 'azure_blob' | 'gcp';
+  // Cloud storage metadata
+  cloudStorageMetadata?: {
+    uploadedAt?: Date;
+    totalSize?: number;
+    region?: string;
+    bucket?: string;
+    urlExpiresAt?: Date;
   };
   startedAt: Date;
   completedAt?: Date;
@@ -55,6 +64,13 @@ export interface IDocumentationJob extends Document {
   markCompleted(files: { readme?: string; apiDocs?: string; architecture?: string }): Promise<IDocumentationJob>;
   markFailed(error: string, step?: string, stack?: string): Promise<IDocumentationJob>;
   getExecutionTime(): number;
+  updateCloudStorage(
+    urls: { readme?: string; apiDocs?: string; architecture?: string; components?: string; dependencies?: string; zipArchive?: string },
+    keys: { readme?: string; apiDocs?: string; architecture?: string; components?: string; dependencies?: string; zipArchive?: string },
+    provider: string,
+    metadata?: { totalSize?: number; region?: string; bucket?: string; urlExpiresAt?: Date }
+  ): Promise<IDocumentationJob>;
+  getSignedUrls(expiresIn?: number): Promise<{ readme?: string; apiDocs?: string; architecture?: string; components?: string; dependencies?: string; zipArchive?: string }>;
 }
 
 /**
@@ -94,27 +110,38 @@ const generatedFilesSchema = new Schema({
 }, { _id: false });
 
 /**
- * Storage URLs Schema (for cloud storage references)
+ * Cloud Storage URLs Schema
  */
-const storageUrlsSchema = new Schema({
+const cloudStorageUrlsSchema = new Schema({
   readme: { type: String, trim: true },
   apiDocs: { type: String, trim: true },
   architecture: { type: String, trim: true },
   components: { type: String, trim: true },
   dependencies: { type: String, trim: true },
-  archiveUrl: { type: String, trim: true }
+  zipArchive: { type: String, trim: true }
 }, { _id: false });
 
 /**
- * Storage Keys Schema (for cloud storage key references)
+ * Cloud Storage Keys Schema (internal storage paths)
  */
-const storageKeysSchema = new Schema({
+const cloudStorageKeysSchema = new Schema({
   readme: { type: String, trim: true },
   apiDocs: { type: String, trim: true },
   architecture: { type: String, trim: true },
   components: { type: String, trim: true },
   dependencies: { type: String, trim: true },
-  archiveKey: { type: String, trim: true }
+  zipArchive: { type: String, trim: true }
+}, { _id: false });
+
+/**
+ * Cloud Storage Metadata Schema
+ */
+const cloudStorageMetadataSchema = new Schema({
+  uploadedAt: { type: Date },
+  totalSize: { type: Number, min: 0 },
+  region: { type: String, trim: true },
+  bucket: { type: String, trim: true },
+  urlExpiresAt: { type: Date }
 }, { _id: false });
 
 /**
@@ -179,17 +206,25 @@ const documentationJobSchema = new Schema<IDocumentationJob>({
     type: generatedFilesSchema,
     default: () => ({})
   },
-  storageUrls: {
-    type: storageUrlsSchema,
+  cloudStorageUrls: {
+    type: cloudStorageUrlsSchema,
     default: () => ({})
   },
-  storageProvider: {
-    type: String,
-    enum: ['local', 's3', 'azure', 'gcp'],
-    default: 'local'
+  cloudStorageKeys: {
+    type: cloudStorageKeysSchema,
+    default: () => ({})
   },
-  storageKeys: {
-    type: storageKeysSchema,
+  cloudStorageProvider: {
+    type: String,
+    enum: {
+      values: ['local', 'oracle_cloud', 'aws_s3', 'azure_blob', 'gcp'],
+      message: 'Storage provider must be one of: local, oracle_cloud, aws_s3, azure_blob, gcp'
+    },
+    default: 'local',
+    index: true
+  },
+  cloudStorageMetadata: {
+    type: cloudStorageMetadataSchema,
     default: () => ({})
   },
   startedAt: {
@@ -228,6 +263,9 @@ documentationJobSchema.index({ projectId: 1, userId: 1 });
 documentationJobSchema.index({ status: 1, createdAt: -1 });
 documentationJobSchema.index({ userId: 1, status: 1 });
 documentationJobSchema.index({ projectId: 1, status: 1 });
+// Cloud storage indexes
+documentationJobSchema.index({ cloudStorageProvider: 1, status: 1 });
+documentationJobSchema.index({ 'cloudStorageMetadata.uploadedAt': 1 });
 
 // Virtual for execution time calculation
 documentationJobSchema.virtual('executionTime').get(function() {
@@ -285,6 +323,99 @@ documentationJobSchema.methods.getExecutionTime = function(): number {
     return this.completedAt.getTime() - this.startedAt.getTime();
   }
   return Date.now() - this.startedAt.getTime();
+};
+
+/**
+ * Update cloud storage information for the job
+ * Stores URLs, keys, provider, and metadata for cloud-stored documentation
+ */
+documentationJobSchema.methods.updateCloudStorage = function(
+  urls: { readme?: string; apiDocs?: string; architecture?: string; components?: string; dependencies?: string; zipArchive?: string },
+  keys: { readme?: string; apiDocs?: string; architecture?: string; components?: string; dependencies?: string; zipArchive?: string },
+  provider: string,
+  metadata?: { totalSize?: number; region?: string; bucket?: string; urlExpiresAt?: Date }
+): Promise<IDocumentationJob> {
+  this.cloudStorageUrls = { ...this.cloudStorageUrls?.toObject(), ...urls };
+  this.cloudStorageKeys = { ...this.cloudStorageKeys?.toObject(), ...keys };
+  this.cloudStorageProvider = provider as any;
+  
+  // Update metadata
+  const currentMetadata = this.cloudStorageMetadata?.toObject() || {};
+  this.cloudStorageMetadata = {
+    uploadedAt: new Date(),
+    totalSize: metadata?.totalSize || currentMetadata.totalSize,
+    region: metadata?.region || currentMetadata.region,
+    bucket: metadata?.bucket || currentMetadata.bucket,
+    urlExpiresAt: metadata?.urlExpiresAt || currentMetadata.urlExpiresAt
+  };
+  
+  return this.save();
+};
+
+/**
+ * Get signed URLs for all cloud-stored files
+ * Regenerates signed URLs if they are expired or near expiration
+ */
+documentationJobSchema.methods.getSignedUrls = async function(
+  expiresIn?: number
+): Promise<{ readme?: string; apiDocs?: string; architecture?: string; components?: string; dependencies?: string; zipArchive?: string }> {
+  // Import storage provider factory dynamically to avoid circular dependencies
+  const { StorageProviderFactory } = await import('../services/storage/StorageProviderFactory');
+  
+  // Check if URLs need refresh
+  const urlExpiresAt = this.cloudStorageMetadata?.urlExpiresAt;
+  const now = new Date();
+  const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+  
+  // If URLs are still valid for more than 5 minutes, return existing URLs
+  if (urlExpiresAt && urlExpiresAt > fiveMinutesFromNow && this.cloudStorageUrls) {
+    return this.cloudStorageUrls.toObject();
+  }
+  
+  // Need to regenerate URLs
+  if (!this.cloudStorageKeys || !this.cloudStorageProvider) {
+    throw new Error('Cloud storage keys or provider not available');
+  }
+  
+  try {
+    const provider = StorageProviderFactory.create(this.cloudStorageProvider as any);
+    const newUrls: any = {};
+    const keys = this.cloudStorageKeys.toObject();
+    
+    // Generate signed URLs for each file
+    const urlPromises = Object.entries(keys).map(async ([fileType, key]) => {
+      if (key) {
+        try {
+          const signedUrl = await provider.getSignedUrl(key as string, { expiresIn });
+          newUrls[fileType] = signedUrl;
+        } catch (error: any) {
+          console.error(`Failed to generate signed URL for ${fileType}:`, error.message);
+        }
+      }
+    });
+    
+    await Promise.all(urlPromises);
+    
+    // Update URLs and expiry in database
+    const expirySeconds = expiresIn || 3600;
+    const newExpiresAt = new Date(now.getTime() + expirySeconds * 1000);
+    
+    this.cloudStorageUrls = newUrls;
+    if (this.cloudStorageMetadata) {
+      this.cloudStorageMetadata.urlExpiresAt = newExpiresAt;
+    } else {
+      this.cloudStorageMetadata = {
+        urlExpiresAt: newExpiresAt
+      };
+    }
+    
+    await this.save();
+    
+    return newUrls;
+  } catch (error: any) {
+    console.error('Failed to get signed URLs:', error);
+    throw new Error(`Failed to generate signed URLs: ${error.message}`);
+  }
 };
 
 // Static Methods

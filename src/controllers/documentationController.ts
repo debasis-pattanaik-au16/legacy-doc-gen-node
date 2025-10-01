@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { DocumentationJob, Project, AnalysisResult } from '@/models';
 import { documentationGenerator, GeneratedDocumentation } from '@/services/documentationGenerator';
 import { fileStorageService, DocumentationFilePaths } from '@/services/fileStorageService';
+import { StorageProviderFactory } from '@/services/storage/StorageProviderFactory';
+import { storageConfig } from '@/config/storage.config';
 import { logger } from '@/utils/logger';
 import { asyncHandler, AppError } from '@/middleware/errorHandler';
 import { ResponseHandler } from '@/utils/response';
@@ -1392,8 +1394,8 @@ export class DocumentationController {
         }
       }
 
-      // Save files to storage
-      await job.updateProgress(90, 'Saving documentation files');
+      // Save files to local storage first
+      await job.updateProgress(88, 'Saving documentation files locally');
       let savedFilePaths: DocumentationFilePaths | null = null;
       
       try {
@@ -1403,11 +1405,26 @@ export class DocumentationController {
           generatedDocs,
           jobId
         );
-        logger.info(`Documentation files saved for job: ${jobId}`);
+        logger.info(`Documentation files saved locally for job: ${jobId}`);
       } catch (error: any) {
-        logger.error(`File saving failed for job ${jobId}:`, error);
+        logger.error(`Local file saving failed for job ${jobId}:`, error);
         await job.markFailed(`File saving failed: ${error.message}`, 'Saving files');
         return;
+      }
+
+      // Upload to cloud storage if enabled
+      const isCloudEnabled = storageConfig.isCloudProvider();
+      if (isCloudEnabled) {
+        await job.updateProgress(92, 'Uploading documentation to cloud storage');
+        
+        try {
+          await this.uploadToCloudStorage(job, project, generatedDocs, savedFilePaths, jobId);
+          logger.info(`Documentation uploaded to cloud storage for job: ${jobId}`);
+        } catch (error: any) {
+          logger.error(`Cloud upload failed for job ${jobId}:`, error);
+          // Don't fail the job - files are saved locally
+          logger.warn(`Continuing with local storage for job ${jobId}`);
+        }
       }
 
       // Update job with file paths and complete
@@ -1442,6 +1459,187 @@ export class DocumentationController {
       if (job) {
         await job.markFailed(`Unexpected error: ${error.message}`, 'Processing documentation', error.stack);
       }
+    }
+  }
+
+  /**
+   * Upload generated documentation to cloud storage
+   */
+  private async uploadToCloudStorage(
+    job: any,
+    project: any,
+    generatedDocs: GeneratedDocumentation,
+    savedFilePaths: DocumentationFilePaths | null,
+    jobId: string
+  ): Promise<void> {
+    try {
+      const storageProvider = StorageProviderFactory.getInstance();
+      const userId = job.userId;
+      const projectId = project._id.toString();
+      
+      logger.info(`Uploading documentation to cloud storage for job: ${jobId}`);
+      
+      const cloudUrls: any = {};
+      const cloudKeys: any = {};
+      let totalSize = 0;
+
+      // Upload README
+      if (generatedDocs.readme && savedFilePaths?.readme) {
+        const readmeBuffer = Buffer.from(generatedDocs.readme, 'utf8');
+        const readmeKey = `documentations/${userId}/${projectId}/${jobId}/README.md`;
+        
+        const uploadResult = await storageProvider.upload(readmeBuffer, readmeKey, {
+          contentType: 'text/markdown',
+          metadata: {
+            projectId,
+            projectName: project.name,
+            jobId,
+            documentType: 'readme'
+          }
+        });
+        
+        cloudUrls.readme = uploadResult.url;
+        cloudKeys.readme = uploadResult.key;
+        totalSize += uploadResult.size;
+        logger.info(`README uploaded to cloud: ${uploadResult.key}`);
+      }
+
+      // Upload API Documentation
+      if (generatedDocs.apiDocs && savedFilePaths?.apiDocs) {
+        const apiDocsBuffer = Buffer.from(generatedDocs.apiDocs, 'utf8');
+        const apiDocsKey = `documentations/${userId}/${projectId}/${jobId}/API_DOCUMENTATION.md`;
+        
+        const uploadResult = await storageProvider.upload(apiDocsBuffer, apiDocsKey, {
+          contentType: 'text/markdown',
+          metadata: {
+            projectId,
+            projectName: project.name,
+            jobId,
+            documentType: 'api-docs'
+          }
+        });
+        
+        cloudUrls.apiDocs = uploadResult.url;
+        cloudKeys.apiDocs = uploadResult.key;
+        totalSize += uploadResult.size;
+        logger.info(`API Documentation uploaded to cloud: ${uploadResult.key}`);
+      }
+
+      // Upload Architecture Documentation
+      if (generatedDocs.architecture && savedFilePaths?.architecture) {
+        const architectureBuffer = Buffer.from(generatedDocs.architecture, 'utf8');
+        const architectureKey = `documentations/${userId}/${projectId}/${jobId}/ARCHITECTURE.md`;
+        
+        const uploadResult = await storageProvider.upload(architectureBuffer, architectureKey, {
+          contentType: 'text/markdown',
+          metadata: {
+            projectId,
+            projectName: project.name,
+            jobId,
+            documentType: 'architecture'
+          }
+        });
+        
+        cloudUrls.architecture = uploadResult.url;
+        cloudKeys.architecture = uploadResult.key;
+        totalSize += uploadResult.size;
+        logger.info(`Architecture Documentation uploaded to cloud: ${uploadResult.key}`);
+      }
+
+      // Upload Components Documentation
+      if (generatedDocs.components && savedFilePaths?.components) {
+        const componentsBuffer = Buffer.from(generatedDocs.components, 'utf8');
+        const componentsKey = `documentations/${userId}/${projectId}/${jobId}/COMPONENTS.md`;
+        
+        const uploadResult = await storageProvider.upload(componentsBuffer, componentsKey, {
+          contentType: 'text/markdown',
+          metadata: {
+            projectId,
+            projectName: project.name,
+            jobId,
+            documentType: 'components'
+          }
+        });
+        
+        cloudUrls.components = uploadResult.url;
+        cloudKeys.components = uploadResult.key;
+        totalSize += uploadResult.size;
+        logger.info(`Components Documentation uploaded to cloud: ${uploadResult.key}`);
+      }
+
+      // Upload Dependencies Documentation
+      if (generatedDocs.dependencies && savedFilePaths?.dependencies) {
+        const dependenciesBuffer = Buffer.from(generatedDocs.dependencies, 'utf8');
+        const dependenciesKey = `documentations/${userId}/${projectId}/${jobId}/DEPENDENCIES.md`;
+        
+        const uploadResult = await storageProvider.upload(dependenciesBuffer, dependenciesKey, {
+          contentType: 'text/markdown',
+          metadata: {
+            projectId,
+            projectName: project.name,
+            jobId,
+            documentType: 'dependencies'
+          }
+        });
+        
+        cloudUrls.dependencies = uploadResult.url;
+        cloudKeys.dependencies = uploadResult.key;
+        totalSize += uploadResult.size;
+        logger.info(`Dependencies Documentation uploaded to cloud: ${uploadResult.key}`);
+      }
+
+      // Upload ZIP file
+      if (savedFilePaths?.zipFile) {
+        const fs = await import('fs/promises');
+        const zipBuffer = await fs.readFile(savedFilePaths.zipFile);
+        const zipFileName = savedFilePaths.zipFile.split('/').pop() || 'documentation.zip';
+        const zipKey = `documentations/${userId}/${projectId}/${jobId}/${zipFileName}`;
+        
+        const uploadResult = await storageProvider.upload(zipBuffer, zipKey, {
+          contentType: 'application/zip',
+          metadata: {
+            projectId,
+            projectName: project.name,
+            jobId,
+            documentType: 'archive'
+          }
+        });
+        
+        cloudUrls.zipArchive = uploadResult.url;
+        cloudKeys.zipArchive = uploadResult.key;
+        totalSize += uploadResult.size;
+        logger.info(`ZIP archive uploaded to cloud: ${uploadResult.key}`);
+      }
+
+      // Get storage provider config for metadata
+      const providerInfo = StorageProviderFactory.getProviderInfo();
+      const providerConfig = providerInfo.config;
+      
+      // Calculate URL expiry time
+      const urlExpirySeconds = storageConfig.getBaseConfig().urlExpirySeconds;
+      const urlExpiresAt = new Date(Date.now() + urlExpirySeconds * 1000);
+
+      // Update job with cloud storage information
+      await job.updateCloudStorage(
+        cloudUrls,
+        cloudKeys,
+        providerInfo.type,
+        {
+          totalSize,
+          region: providerConfig.region,
+          bucket: providerConfig.bucketName || providerConfig.bucket,
+          urlExpiresAt
+        }
+      );
+
+      logger.info(`Cloud storage metadata saved for job: ${jobId}`);
+      logger.info(`Total uploaded size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+      logger.info(`Cloud storage provider: ${providerInfo.type}`);
+      logger.info(`URLs expire at: ${urlExpiresAt.toISOString()}`);
+
+    } catch (error: any) {
+      logger.error(`Cloud upload failed for job ${jobId}:`, error);
+      throw new Error(`Failed to upload to cloud storage: ${error.message}`);
     }
   }
 
