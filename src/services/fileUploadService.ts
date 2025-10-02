@@ -397,7 +397,21 @@ export const cleanupProjectFiles = async (projectId: string): Promise<void> => {
   
   try {
     await fs.rmdir(projectPath, { recursive: true });
+    console.log(`Successfully cleaned up local project files for ${projectId}`);
   } catch (error: any) {
     console.error(`Error cleaning up project files for ${projectId}:`, error);
+  }
+};
+
+// Clean up local files after successful cloud upload
+export const cleanupLocalFilesAfterCloudUpload = async (projectId: string): Promise<void> => {
+  try {
+    // Clean up extracted project files
+    await cleanupProjectFiles(projectId);
+    
+    console.log(`Local files cleaned up after cloud upload for project: ${projectId}`);
+  } catch (error: any) {
+    console.error(`Failed to cleanup local files after cloud upload for ${projectId}:`, error);
+    // Don't throw error as cloud upload was successful
   }
 };

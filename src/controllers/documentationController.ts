@@ -175,7 +175,11 @@ export class DocumentationController {
         section,
         content: sectionContent,
         generatedAt: job.completedAt,
-        jobId: job._id
+        jobId: job._id,
+        cloudStorage: job.cloudStorageProvider !== 'local' ? {
+          provider: job.cloudStorageProvider,
+          urlExpiresAt: job.cloudStorageMetadata?.urlExpiresAt
+        } : undefined
       }, `${section} documentation retrieved`);
     } else {
       ResponseHandler.success(res, {
@@ -185,7 +189,13 @@ export class DocumentationController {
         generatedAt: job.completedAt,
         executionTime: job.getExecutionTime(),
         sections: job.sections,
-        jobId: job._id
+        jobId: job._id,
+        cloudStorage: job.cloudStorageProvider !== 'local' ? {
+          provider: job.cloudStorageProvider,
+          urls: job.cloudStorageUrls,
+          urlExpiresAt: job.cloudStorageMetadata?.urlExpiresAt,
+          totalSize: job.cloudStorageMetadata?.totalSize
+        } : undefined
       }, 'Complete documentation retrieved');
     }
   });
@@ -229,7 +239,7 @@ export class DocumentationController {
       throw new AppError('No documentation generation job found for this project', 404);
     }
 
-    const response = {
+    const response: any = {
       jobId: job._id,
       projectId,
       projectName: project.name,
@@ -243,6 +253,17 @@ export class DocumentationController {
       errorMessage: job.errorMessage,
       errorDetails: job.errorDetails
     };
+
+    // Add cloud storage info if available
+    if (job.cloudStorageProvider && job.cloudStorageProvider !== 'local' && job.status === 'completed') {
+      response.cloudStorage = {
+        provider: job.cloudStorageProvider,
+        urls: job.cloudStorageUrls,
+        urlExpiresAt: job.cloudStorageMetadata?.urlExpiresAt,
+        totalSize: job.cloudStorageMetadata?.totalSize,
+        region: job.cloudStorageMetadata?.region
+      };
+    }
 
     ResponseHandler.success(res, response, 'Generation status retrieved');
   });
@@ -274,7 +295,7 @@ export class DocumentationController {
     }
 
     const project = job.projectId as any;
-    const response = {
+    const response: any = {
       jobId: job._id,
       projectId: project._id,
       projectName: project.name,
@@ -288,6 +309,17 @@ export class DocumentationController {
       errorMessage: job.errorMessage,
       errorDetails: job.errorDetails
     };
+
+    // Add cloud storage info if available
+    if (job.cloudStorageProvider && job.cloudStorageProvider !== 'local' && job.status === 'completed') {
+      response.cloudStorage = {
+        provider: job.cloudStorageProvider,
+        urls: job.cloudStorageUrls,
+        urlExpiresAt: job.cloudStorageMetadata?.urlExpiresAt,
+        totalSize: job.cloudStorageMetadata?.totalSize,
+        region: job.cloudStorageMetadata?.region
+      };
+    }
 
     ResponseHandler.success(res, response, 'Job status retrieved');
   });
@@ -609,24 +641,108 @@ export class DocumentationController {
       throw new AppError('Project not found or access denied', 404);
     }
 
-    // Get latest generation directory
-    const projectDir = await fileStorageService.getDocumentationPath(projectId);
-    if (!projectDir) {
+    // Find the most recent completed job
+    const job = await DocumentationJob.findOne({
+      projectId,
+      status: 'completed'
+    }).sort({ completedAt: -1 });
+
+    if (!job) {
       ResponseHandler.success(res, {
         projectId,
         projectName: project.name,
         files: [],
-        message: 'No documentation files found'
+        message: 'No completed documentation found'
       }, 'Available files retrieved');
       return;
     }
 
     try {
+      const fileDetails = [];
+      const isCloudEnabled = storageConfig.isCloudProvider();
+      
+      // If cloud storage is enabled and URLs exist, use cloud URLs
+      if (isCloudEnabled && job.cloudStorageUrls && Object.keys(job.cloudStorageUrls).length > 0) {
+        logger.info(`Using cloud storage URLs for project: ${projectId}`);
+        
+        // Check if URLs are expired or near expiration
+        const urlExpiresAt = job.cloudStorageMetadata?.urlExpiresAt;
+        const now = new Date();
+        const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+        
+        let cloudUrls = job.cloudStorageUrls;
+        let expiresAt = urlExpiresAt;
+        
+        // Refresh URLs if expired or near expiration
+        if (!urlExpiresAt || urlExpiresAt < fiveMinutesFromNow) {
+          logger.info(`Refreshing expired/near-expiry URLs for project: ${projectId}`);
+          try {
+            cloudUrls = await job.getSignedUrls();
+            expiresAt = job.cloudStorageMetadata?.urlExpiresAt;
+            logger.info(`URLs refreshed successfully for project: ${projectId}`);
+          } catch (error: any) {
+            logger.error(`Failed to refresh URLs: ${error.message}`);
+            // Continue with existing URLs
+          }
+        }
+        
+        // Map file names to cloud URLs
+        const fileMap = {
+          'README.md': { url: cloudUrls.readme, size: job.generatedFiles.readme?.length || 0 },
+          'API_DOCUMENTATION.md': { url: cloudUrls.apiDocs, size: job.generatedFiles.apiDocs?.length || 0 },
+          'ARCHITECTURE.md': { url: cloudUrls.architecture, size: job.generatedFiles.architecture?.length || 0 },
+          'COMPONENTS.md': { url: cloudUrls.components, size: job.generatedFiles.components?.length || 0 },
+          'DEPENDENCIES.md': { url: cloudUrls.dependencies, size: job.generatedFiles.dependencies?.length || 0 },
+          [`${project.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_documentation.zip`]: { url: cloudUrls.zipArchive, size: 0 }
+        };
+        
+        // Build file details from cloud storage
+        for (const [fileName, data] of Object.entries(fileMap)) {
+          if (data.url) {
+            const mimeType = fileName.endsWith('.zip') ? 'application/zip' : 'text/markdown';
+            fileDetails.push({
+              fileName,
+              size: data.size,
+              mimeType,
+              createdAt: job.cloudStorageMetadata?.uploadedAt || job.completedAt,
+              downloadUrl: data.url,
+              cloudUrl: data.url,
+              isCloudStored: true,
+              expiresAt,
+              storageProvider: job.cloudStorageProvider
+            });
+          }
+        }
+        
+        ResponseHandler.success(res, {
+          projectId,
+          projectName: project.name,
+          files: fileDetails,
+          totalFiles: fileDetails.length,
+          totalSize: job.cloudStorageMetadata?.totalSize || fileDetails.reduce((sum, file) => sum + file.size, 0),
+          storageProvider: job.cloudStorageProvider,
+          urlsExpiresAt: expiresAt
+        }, 'Available files retrieved from cloud storage');
+        return;
+      }
+      
+      // Fallback to local storage
+      logger.info(`Using local storage for project: ${projectId}`);
+      const projectDir = await fileStorageService.getDocumentationPath(projectId);
+      
+      if (!projectDir) {
+        ResponseHandler.success(res, {
+          projectId,
+          projectName: project.name,
+          files: [],
+          message: 'No documentation files found'
+        }, 'Available files retrieved');
+        return;
+      }
+      
       const fs = await import('fs/promises');
       const path = await import('path');
       const files = await fs.readdir(projectDir);
-      
-      const fileDetails = [];
       
       for (const file of files) {
         const filePath = path.join(projectDir, file);
@@ -640,7 +756,9 @@ export class DocumentationController {
               size: metadata.size,
               mimeType: metadata.mimeType,
               createdAt: metadata.createdAt,
-              downloadUrl: `/api/v1/documentation/${projectId}/download/${metadata.fileName}`
+              downloadUrl: `/api/v1/documentation/${projectId}/download/${metadata.fileName}`,
+              isCloudStored: false,
+              storageProvider: 'local'
             });
           }
         }
@@ -651,8 +769,9 @@ export class DocumentationController {
         projectName: project.name,
         files: fileDetails,
         totalFiles: fileDetails.length,
-        totalSize: fileDetails.reduce((sum, file) => sum + file.size, 0)
-      }, 'Available files retrieved');
+        totalSize: fileDetails.reduce((sum, file) => sum + file.size, 0),
+        storageProvider: 'local'
+      }, 'Available files retrieved from local storage');
       
     } catch (error: any) {
       logger.error(`Failed to get available files for project ${projectId}:`, error);
@@ -1285,6 +1404,80 @@ export class DocumentationController {
   }
 
   /**
+   * Refresh expired cloud storage URLs
+   * POST /api/v1/documentation/:projectId/refresh-urls
+   */
+  refreshCloudUrls = asyncHandler(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const { projectId } = req.params;
+    const userId = req.user?.id;
+    const { expiresIn = 3600 } = req.body; // Default 1 hour
+
+    if (!userId) {
+      throw new AppError('Authentication required', 401);
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      throw new AppError('Invalid project ID format', 400);
+    }
+
+    logger.info(`URL refresh requested for project: ${projectId} by user: ${userId}`);
+
+    // Verify project access
+    const project = await Project.findOne({ 
+      _id: projectId, 
+      $or: [
+        { 'teamMembers.user': userId },
+        { ownerId: userId }
+      ]
+    });
+
+    if (!project) {
+      throw new AppError('Project not found or access denied', 404);
+    }
+
+    // Find the most recent completed job
+    const job = await DocumentationJob.findOne({
+      projectId,
+      status: 'completed'
+    }).sort({ completedAt: -1 });
+
+    if (!job) {
+      throw new AppError('No completed documentation found for this project', 404);
+    }
+
+    // Check if cloud storage is being used
+    if (!job.cloudStorageProvider || job.cloudStorageProvider === 'local') {
+      throw new AppError('This project uses local storage. URL refresh is not needed.', 400);
+    }
+
+    if (!job.cloudStorageKeys || Object.keys(job.cloudStorageKeys).length === 0) {
+      throw new AppError('No cloud storage keys found. Cannot refresh URLs.', 404);
+    }
+
+    try {
+      // Refresh URLs
+      const freshUrls = await job.getSignedUrls(expiresIn);
+      
+      logger.info(`URLs refreshed successfully for project: ${projectId}`);
+      logger.info(`New expiry: ${job.cloudStorageMetadata?.urlExpiresAt?.toISOString()}`);
+
+      ResponseHandler.success(res, {
+        projectId,
+        projectName: project.name,
+        jobId: job._id,
+        urls: freshUrls,
+        expiresAt: job.cloudStorageMetadata?.urlExpiresAt,
+        storageProvider: job.cloudStorageProvider,
+        refreshedAt: new Date()
+      }, 'URLs refreshed successfully');
+
+    } catch (error: any) {
+      logger.error(`Failed to refresh URLs for project ${projectId}:`, error);
+      throw new AppError(`URL refresh failed: ${error.message}`, 500);
+    }
+  });
+
+  /**
    * Delete generated documentation
    * DELETE /api/v1/documentation/:projectId
    */
@@ -1420,6 +1613,15 @@ export class DocumentationController {
         try {
           await this.uploadToCloudStorage(job, project, generatedDocs, savedFilePaths, jobId);
           logger.info(`Documentation uploaded to cloud storage for job: ${jobId}`);
+          
+          // Clean up local files after successful cloud upload
+          await job.updateProgress(94, 'Cleaning up local files after cloud upload');
+          const cleanupSuccess = await fileStorageService.cleanupAfterCloudUpload(project._id.toString(), jobId);
+          if (cleanupSuccess) {
+            logger.info(`Local files cleaned up after cloud upload for job: ${jobId}`);
+          } else {
+            logger.warn(`Failed to cleanup local files for job: ${jobId}, but cloud upload was successful`);
+          }
         } catch (error: any) {
           logger.error(`Cloud upload failed for job ${jobId}:`, error);
           // Don't fail the job - files are saved locally

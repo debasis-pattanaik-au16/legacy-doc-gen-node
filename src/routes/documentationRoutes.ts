@@ -60,6 +60,18 @@ const sectionQuerySchema = Joi.object({
     })
 }).options({ stripUnknown: true });
 
+const refreshUrlsSchema = Joi.object({
+  expiresIn: Joi.number()
+    .integer()
+    .min(300)
+    .max(86400)
+    .default(3600)
+    .messages({
+      'number.min': 'Expiry time must be at least 300 seconds (5 minutes)',
+      'number.max': 'Expiry time cannot exceed 86400 seconds (24 hours)'
+    })
+}).options({ stripUnknown: true });
+
 /**
  * @route   POST /api/v1/documentation/generate/:projectId
  * @desc    Generate documentation for a project
@@ -144,6 +156,19 @@ router.get(
 );
 
 /**
+ * @route   POST /api/v1/documentation/:projectId/refresh-urls
+ * @desc    Refresh expired cloud storage URLs
+ * @access  Private (Project team members)
+ */
+router.post(
+  '/:projectId/refresh-urls',
+  authenticate,
+  rateLimitConfig,
+  validate(refreshUrlsSchema, 'body'),
+  documentationController.refreshCloudUrls
+);
+
+/**
  * @route   GET /api/v1/documentation/:projectId/download/:fileName
  * @desc    Download specific documentation file
  * @access  Private (Project team members) - accepts token in header or query
@@ -208,6 +233,7 @@ router.get('/health', authenticate, (req, res) => {
       status: 'GET /:projectId/status',
       history: 'GET /:projectId/history',
       files: 'GET /:projectId/files',
+      refreshUrls: 'POST /:projectId/refresh-urls',
       download: 'GET /:projectId/download/:fileName',
       downloadZip: 'GET /:projectId/download-zip',
       view: 'GET /:projectId/view/:section?',

@@ -13,6 +13,7 @@
     "test:oracle": "ts-node -r tsconfig-paths/register src/scripts/test-oracle-upload.ts",
     "test:cloud-model": "ts-node -r tsconfig-paths/register src/scripts/test-cloud-storage-model.ts",
     "test:phase4": "ts-node -r tsconfig-paths/register src/scripts/test-phase4-integration.ts",
+    "test:phase5-api": "ts-node -r tsconfig-paths/register src/scripts/test-phase5-api.ts",
     "migrate:cloud-storage": "ts-node -r tsconfig-paths/register src/scripts/add-cloud-storage-fields.ts",
     "migrate:verify": "ts-node -r tsconfig-paths/register src/scripts/add-cloud-storage-fields.ts verify",
     "lint": "eslint src/**/*.ts",

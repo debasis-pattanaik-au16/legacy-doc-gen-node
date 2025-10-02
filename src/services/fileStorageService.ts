@@ -309,6 +309,51 @@ export class FileStorageService {
   }
 
   /**
+   * Clean up local documentation files after successful cloud upload
+   */
+  public async cleanupAfterCloudUpload(projectId: string, jobId?: string): Promise<boolean> {
+    try {
+      logger.info(`Cleaning up local files after cloud upload for project: ${projectId}`);
+      
+      const projectDir = this.getProjectDirectoryPath(projectId);
+      const exists = await this.directoryExists(projectDir);
+      
+      if (!exists) {
+        logger.warn(`Project directory not found for cleanup: ${projectId}`);
+        return true; // Consider it successful if no local files exist
+      }
+      
+      if (jobId) {
+        // Clean up specific job session
+        const sessions = await fs.readdir(projectDir);
+        const jobSession = sessions.find(session => session.includes(jobId));
+        
+        if (jobSession) {
+          const sessionPath = path.join(projectDir, jobSession);
+          await fs.rm(sessionPath, { recursive: true, force: true });
+          logger.info(`Cleaned up job session: ${jobSession} for project: ${projectId}`);
+        }
+        
+        // Check if project directory is empty and remove it
+        const remainingSessions = await fs.readdir(projectDir);
+        if (remainingSessions.length === 0 || remainingSessions.every(s => s.startsWith('.'))) {
+          await fs.rm(projectDir, { recursive: true, force: true });
+          logger.info(`Removed empty project directory after cleanup: ${projectId}`);
+        }
+      } else {
+        // Clean up entire project directory
+        await fs.rm(projectDir, { recursive: true, force: true });
+        logger.info(`Cleaned up entire project directory: ${projectId}`);
+      }
+      
+      return true;
+    } catch (error: any) {
+      logger.error(`Failed to cleanup local files after cloud upload for project ${projectId}:`, error);
+      return false; // Don't throw error as cloud upload was successful
+    }
+  }
+
+  /**
    * Clean up old documentation files
    */
   public async cleanupOldFiles(): Promise<{ deletedFiles: number; freedSpace: number }> {
