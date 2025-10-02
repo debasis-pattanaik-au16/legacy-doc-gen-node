@@ -395,18 +395,25 @@ export const updateProjectStatus = asyncHandler(async (req: AuthenticatedRequest
     return ApiResponse.unauthorized(res, 'User not authenticated');
   }
 
-  const project = await Project.findOne({
-    _id: id,
-    'teamMembers.user': userId,
-    'teamMembers.permissions': { $in: ['write', 'admin'] }
-  });
+  // When status is 'completed', also set documentation progress to 100%
+  const updateData: any = { status };
+  if (status === 'completed') {
+    updateData['progress.documentationProgress'] = 100;
+  }
+
+  const project = await Project.findOneAndUpdate(
+    {
+      _id: id,
+      'teamMembers.user': userId,
+      'teamMembers.permissions': { $in: ['write', 'admin'] }
+    },
+    updateData,
+    { new: true, runValidators: false } // Don't run validators, just update fields
+  );
 
   if (!project) {
     return ApiResponse.error(res, 'Project not found or insufficient permissions', 403);
   }
-
-  project.status = status;
-  await project.save();
 
   logger.info(`Project status updated: ${id} to ${status} by user: ${userId}`);
 
