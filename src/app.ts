@@ -14,6 +14,7 @@ import {
   compressionConfig 
 } from '@/middleware/security';
 import authRoutes from '@/routes/authRoutes';
+import userRoutes from '@/routes/userRoutes';
 import projectRoutes from '@/routes/projectRoutes';
 import uploadRoutes from '@/routes/uploadRoutes';
 import dependencyRoutes from '@/routes/dependencyRoutes';
@@ -80,6 +81,7 @@ export class App {
 
     // API routes
     this.app.use('/api/v1/auth', authRoutes);
+    this.app.use('/api/v1', userRoutes); // User profile & settings routes
     this.app.use('/api/v1/projects', projectRoutes);
     this.app.use('/api/v1/projects', uploadRoutes);
     this.app.use('/api/v1/dependencies', dependencyRoutes);
