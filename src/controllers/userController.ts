@@ -18,7 +18,7 @@ export class UserController {
    * Get current user profile with all settings
    */
   public static getProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user!.userId || req.user!.id || req.user!._id;
+    const userId = req.user!._id;
 
     const user = await User.findById(userId);
     
@@ -40,7 +40,7 @@ export class UserController {
    * Update user profile (name, company, timezone, avatarUrl)
    */
   public static updateProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user!.userId || req.user!.id || req.user!._id;
+    const userId = req.user!._id;
     const { name, company, timezone, avatarUrl } = req.body;
 
     const user = await User.findById(userId);
@@ -74,7 +74,7 @@ export class UserController {
    * Update notification preferences
    */
   public static updateNotifications = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user!.userId || req.user!.id || req.user!._id;
+    const userId = req.user!._id;
     const { productUpdates, analysisReady } = req.body;
 
     const user = await User.findById(userId);
@@ -104,7 +104,7 @@ export class UserController {
    * Update user preferences (auto-save)
    */
   public static updatePreferences = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user!.userId || req.user!.id || req.user!._id;
+    const userId = req.user!._id;
     const { autoSave } = req.body;
 
     const user = await User.findById(userId);
@@ -134,7 +134,7 @@ export class UserController {
    * Rate limited to prevent brute force attacks
    */
   public static updatePassword = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user!.userId || req.user!.id || req.user!._id;
+    const userId = req.user!._id;
     const { currentPassword, newPassword } = req.body;
 
     // Find user with password field (normally excluded)
@@ -170,11 +170,13 @@ export class UserController {
    * Multer middleware handles file upload to memory
    */
   public static uploadAvatar = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user!.userId || req.user!.id || req.user!._id;
+    const userId = req.user!._id;
     
     // Check if file was uploaded
     if (!req.file) {
-      ResponseHandler.validationError(res, 'No avatar file provided');
+      ResponseHandler.fieldValidationError(res, {
+        avatar: 'No avatar file provided'
+      }, 'Avatar upload failed');
       return;
     }
 

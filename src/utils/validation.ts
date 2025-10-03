@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { ValidationErrorResponse } from '@/types';
 
 /**
  * Validation schemas for API endpoints
@@ -188,9 +189,17 @@ export const projectValidation = {
     description: Joi.string()
       .trim()
       .max(500)
-      .allow('')
+      .allow('', null)
+      .optional()
       .messages({
         'string.max': 'Description cannot exceed 500 characters'
+      }),
+    type: Joi.string()
+      .valid('web', 'mobile', 'desktop', 'api', 'library', 'other')
+      .optional()
+      .default('web')
+      .messages({
+        'any.only': 'Project type must be one of: web, mobile, desktop, api, library, other'
       })
   }),
 
@@ -327,31 +336,57 @@ export const objectIdValidation = Joi.string()
   });
 
 /**
+ * Format Joi validation errors into ValidationErrorResponse structure
+ */
+export const formatValidationErrors = (error: Joi.ValidationError): ValidationErrorResponse => {
+  const fields: Record<string, string> = {};
+  
+  error.details.forEach(detail => {
+    const field = detail.path.join('.');
+    // Use the first error message for each field
+    if (!fields[field]) {
+      fields[field] = detail.message;
+    }
+  });
+
+  return {
+    code: 'VALIDATION_ERROR',
+    message: 'Validation failed',
+    fields
+  };
+};
+
+/**
  * Validation middleware factory
  */
 export const validate = (schema: Joi.ObjectSchema, property: 'body' | 'query' | 'params' = 'body') => {
   return (req: any, res: any, next: any) => {
+    // Log incoming data for debugging
+    console.log(`[VALIDATION] Validating ${property}:`, JSON.stringify(req[property], null, 2));
+    
     const { error, value } = schema.validate(req[property], {
       abortEarly: false,
       stripUnknown: true
     });
 
     if (error) {
-      const errorDetails = error.details.map(detail => ({
-        field: detail.path.join('.'),
-        message: detail.message
-      }));
+      // Format using the new ValidationErrorResponse structure
+      const validationError = formatValidationErrors(error);
+      
+      // Log validation error for debugging
+      console.log(`[VALIDATION ERROR] ${property} validation failed:`, validationError);
 
       return res.status(400).json({
         success: false,
         error: {
-          message: 'Validation failed',
-          code: 'VALIDATION_ERROR',
-          details: errorDetails
+          message: validationError.message,
+          code: validationError.code,
+          details: validationError.fields
         }
       });
     }
 
+    console.log(`[VALIDATION] ✅ Validation passed. Validated value:`, JSON.stringify(value, null, 2));
     req[property] = value;
     next();
   };

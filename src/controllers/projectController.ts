@@ -18,7 +18,7 @@ const ApiResponse = ResponseHandler;
  */
 export const createProject = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const { name, description, type } = req.body;
-  const userId = req.user?.id;
+  const userId = req.user?._id;
 
   if (!userId) {
     return ApiResponse.unauthorized(res, 'User not authenticated');
@@ -38,6 +38,7 @@ export const createProject = asyncHandler(async (req: AuthenticatedRequest, res:
     name,
     description,
     type: type || 'web',
+    ownerId: userId, // Set the project owner
     teamMembers: [{
       user: userId,
       role: 'owner',
@@ -73,7 +74,7 @@ export const createProject = asyncHandler(async (req: AuthenticatedRequest, res:
  * Get all projects for authenticated user
  */
 export const getProjects = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user?.id;
+  const userId = req.user?._id;
   const { page = 1, limit = 10, status, type, search, sortBy = 'updatedAt', sortOrder = 'desc' } = req.query;
 
   if (!userId) {
@@ -146,7 +147,7 @@ export const getProjects = asyncHandler(async (req: AuthenticatedRequest, res: R
  */
 export const getProjectById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  const userId = req.user?.id;
+  const userId = req.user?._id;
 
   if (!userId) {
     return ApiResponse.unauthorized(res, 'User not authenticated');
@@ -185,7 +186,7 @@ export const getProjectById = asyncHandler(async (req: AuthenticatedRequest, res
 export const updateProject = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { name, description, type } = req.body;
-  const userId = req.user?.id;
+  const userId = req.user?._id;
 
 
   if (!userId) {
@@ -256,7 +257,7 @@ export const updateProject = asyncHandler(async (req: AuthenticatedRequest, res:
  */
 export const deleteProject = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  const userId = req.user?.id;
+  const userId = req.user?._id;
 
   if (!userId) {
     return ApiResponse.unauthorized(res, 'User not authenticated');
@@ -288,7 +289,7 @@ export const deleteProject = asyncHandler(async (req: AuthenticatedRequest, res:
 export const addTeamMember = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { userId: memberUserId, role = 'member', permissions = ['read'] } = req.body;
-  const currentUserId = req.user?.id;
+  const currentUserId = req.user?._id;
 
   if (!currentUserId) {
     return ApiResponse.unauthorized(res, 'User not authenticated');
@@ -341,7 +342,7 @@ export const addTeamMember = asyncHandler(async (req: AuthenticatedRequest, res:
  */
 export const removeTeamMember = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const { id, userId: memberUserId } = req.params;
-  const currentUserId = req.user?.id;
+  const currentUserId = req.user?._id;
 
   if (!currentUserId) {
     return ApiResponse.unauthorized(res, 'User not authenticated');
@@ -389,7 +390,7 @@ export const removeTeamMember = asyncHandler(async (req: AuthenticatedRequest, r
 export const updateProjectStatus = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { status } = req.body;
-  const userId = req.user?.id;
+  const userId = req.user?._id;
 
   if (!userId) {
     return ApiResponse.unauthorized(res, 'User not authenticated');
@@ -430,7 +431,7 @@ export const updateProjectStatus = asyncHandler(async (req: AuthenticatedRequest
  * Get project statistics for authenticated user
  */
 export const getProjectStats = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user?.id;
+  const userId = req.user?._id;
 
   if (!userId) {
     return ApiResponse.unauthorized(res, 'User not authenticated');

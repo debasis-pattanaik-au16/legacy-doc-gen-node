@@ -413,9 +413,9 @@ export interface AvatarUploadResult {
 }
 
 /**
- * API Error Response
+ * Validation Error Response - for field-level validation errors
  */
-export interface ApiErrorResponse {
+export interface ValidationErrorResponse {
   code: string;
   message: string;
   fields?: Record<string, string>;
