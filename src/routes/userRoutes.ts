@@ -3,6 +3,7 @@ import { UserController } from '@/controllers/userController';
 import { authenticate } from '@/middleware/auth';
 import { validate } from '@/utils/validation';
 import { userValidation } from '@/utils/validation';
+import { passwordChangeRateLimitConfig } from '@/middleware/security';
 
 const router = Router();
 
@@ -23,8 +24,14 @@ router.put('/me/notifications', authenticate, validate(userValidation.updateNoti
 // PUT /api/me/preferences - Update user preferences
 router.put('/me/preferences', authenticate, validate(userValidation.updatePreferences), UserController.updatePreferences);
 
-// PATCH /api/me/password - Change password (coming in next task)
-// router.patch('/me/password', authenticate, validate(userValidation.updatePassword), UserController.updatePassword);
+// PATCH /api/me/password - Change password (rate limited)
+router.patch(
+  '/me/password', 
+  passwordChangeRateLimitConfig, // Rate limit first
+  authenticate, 
+  validate(userValidation.updatePassword), 
+  UserController.updatePassword
+);
 
 // POST /api/me/avatar - Upload avatar (coming in next task)
 // router.post('/me/avatar', authenticate, UserController.uploadAvatar);

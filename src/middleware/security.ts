@@ -65,6 +65,22 @@ export const authRateLimitConfig = rateLimit({
   legacyHeaders: false
 });
 
+// Rate limiting for password change (prevent brute force)
+export const passwordChangeRateLimitConfig = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 password change attempts per windowMs
+  message: {
+    success: false,
+    error: {
+      message: 'Too many password change attempts, please try again later',
+      code: 'PASSWORD_RATE_LIMIT_EXCEEDED'
+    }
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true // Don't count successful requests
+});
+
 // Helmet configuration for security headers
 export const helmetConfig = helmet({
   contentSecurityPolicy: {

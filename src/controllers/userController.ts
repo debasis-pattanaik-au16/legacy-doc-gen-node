@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import bcrypt from 'bcryptjs';
 import { User } from '@/models/User';
 import { AuthenticatedRequest } from '@/types';
 import { ResponseHandler } from '@/utils/response';
@@ -127,9 +128,39 @@ export class UserController {
 
   /**
    * PATCH /api/me/password
-   * Change user password
-   * Coming in next task...
+   * Change user password (with current password verification)
+   * Rate limited to prevent brute force attacks
    */
+  public static updatePassword = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId || req.user!.id || req.user!._id;
+    const { currentPassword, newPassword } = req.body;
+
+    // Find user with password field (normally excluded)
+    const user = await User.findById(userId).select('+password');
+    
+    if (!user) {
+      ResponseHandler.notFound(res, 'User not found');
+      return;
+    }
+
+    // Verify current password
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      logger.warn(`Failed password change attempt for user: ${user.email}`);
+      ResponseHandler.unauthorized(res, 'Current password is incorrect');
+      return;
+    }
+
+    // Update password (will be hashed by pre-save hook)
+    user.password = newPassword;
+    await user.save();
+
+    logger.info(`Password changed successfully for user: ${user.email}`);
+
+    ResponseHandler.success(res, {
+      message: 'Password updated successfully'
+    }, 'Password updated successfully');
+  });
 
   /**
    * POST /api/me/avatar
