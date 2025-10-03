@@ -17,12 +17,26 @@ export interface IUser extends Document {
   passwordResetToken?: string;
   passwordResetExpires?: Date;
   
+  // Profile & Settings (NEW)
+  company?: string;
+  timezone: string;
+  avatarUrl?: string;
+  notifications: {
+    productUpdates: boolean;
+    analysisReady: boolean;
+  };
+  preferences: {
+    autoSave: boolean;
+  };
+  updatedAt: Date;
+  
   // Instance methods
   comparePassword(candidatePassword: string): Promise<boolean>;
   generateAuthToken(): string;
   generateRefreshToken(): string;
   generateEmailVerificationToken(): string;
   generatePasswordResetToken(): string;
+  toProfileDTO(): UserProfileDTO;
 }
 
 // User Model with static methods
@@ -328,4 +342,81 @@ export interface EnvConfig {
   GCP_BUCKET_NAME: string;
   GCP_KEY_FILE_PATH: string;
   GCP_URL_EXPIRY: number;
+}
+
+// ============================================
+// Profile & Settings Types (NEW)
+// ============================================
+
+/**
+ * User Profile DTO - sanitized user data for frontend
+ */
+export interface UserProfileDTO {
+  id: string;
+  email: string;
+  name: string;
+  company?: string;
+  timezone: string;
+  avatarUrl?: string;
+  notifications: {
+    productUpdates: boolean;
+    analysisReady: boolean;
+  };
+  preferences: {
+    autoSave: boolean;
+  };
+  role: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Update Profile DTO
+ */
+export interface UpdateProfileDTO {
+  name: string;
+  company?: string;
+  timezone: string;
+  avatarUrl?: string;
+}
+
+/**
+ * Update Password DTO
+ */
+export interface UpdatePasswordDTO {
+  currentPassword: string;
+  newPassword: string;
+}
+
+/**
+ * Update Notifications DTO
+ */
+export interface UpdateNotificationsDTO {
+  productUpdates: boolean;
+  analysisReady: boolean;
+}
+
+/**
+ * Update Preferences DTO
+ */
+export interface UpdatePreferencesDTO {
+  autoSave: boolean;
+}
+
+/**
+ * Avatar Upload Result
+ */
+export interface AvatarUploadResult {
+  avatarUrl: string;
+  size: number;
+  compressed: boolean;
+}
+
+/**
+ * API Error Response
+ */
+export interface ApiErrorResponse {
+  code: string;
+  message: string;
+  fields?: Record<string, string>;
 }
