@@ -92,6 +92,83 @@ export const userValidation = {
       }),
     subscriptionPlan: Joi.string()
       .valid('free', 'pro', 'enterprise')
+  }),
+
+  // Profile & Settings validation schemas (NEW)
+  updateProfileSettings: Joi.object({
+    name: Joi.string()
+      .trim()
+      .min(1)
+      .max(80)
+      .required()
+      .messages({
+        'string.min': 'Name must be at least 1 character long',
+        'string.max': 'Name cannot exceed 80 characters',
+        'any.required': 'Name is required'
+      }),
+    company: Joi.string()
+      .trim()
+      .max(120)
+      .allow('', null)
+      .optional()
+      .messages({
+        'string.max': 'Company name cannot exceed 120 characters'
+      }),
+    timezone: Joi.string()
+      .required()
+      .messages({
+        'any.required': 'Timezone is required'
+      }),
+    avatarUrl: Joi.string()
+      .uri()
+      .allow('', null)
+      .optional()
+      .messages({
+        'string.uri': 'Avatar URL must be a valid URL'
+      })
+  }),
+
+  updatePassword: Joi.object({
+    currentPassword: Joi.string()
+      .required()
+      .messages({
+        'any.required': 'Current password is required'
+      }),
+    newPassword: Joi.string()
+      .min(8)
+      .max(128)
+      .pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&#])[A-Za-z\\d@$!%*?&#]'))
+      .required()
+      .messages({
+        'string.min': 'Password must be at least 8 characters long',
+        'string.max': 'Password cannot exceed 128 characters',
+        'string.pattern.base': 'Password must include uppercase, lowercase, number, and special character',
+        'any.required': 'New password is required'
+      })
+  }),
+
+  updateNotifications: Joi.object({
+    productUpdates: Joi.boolean()
+      .required()
+      .messages({
+        'any.required': 'Product updates preference is required',
+        'boolean.base': 'Product updates must be true or false'
+      }),
+    analysisReady: Joi.boolean()
+      .required()
+      .messages({
+        'any.required': 'Analysis ready preference is required',
+        'boolean.base': 'Analysis ready must be true or false'
+      })
+  }),
+
+  updatePreferences: Joi.object({
+    autoSave: Joi.boolean()
+      .required()
+      .messages({
+        'any.required': 'Auto-save preference is required',
+        'boolean.base': 'Auto-save must be true or false'
+      })
   })
 };
 
