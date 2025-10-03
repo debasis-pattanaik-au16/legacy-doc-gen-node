@@ -58,6 +58,39 @@ export const errorHandler = (
     statusCode = 401;
     message = 'Token expired';
     code = 'TOKEN_EXPIRED';
+  } else if (error.name === 'MulterError') {
+    // Handle multer file upload errors
+    statusCode = 400;
+    if (error.message.includes('File too large')) {
+      message = 'File size exceeds 2MB limit';
+      code = 'FILE_TOO_LARGE';
+    } else if (error.message.includes('Unexpected field')) {
+      message = 'Unexpected file field. Use "avatar" field name';
+      code = 'INVALID_FILE_FIELD';
+    } else {
+      message = error.message || 'File upload error';
+      code = 'FILE_UPLOAD_ERROR';
+    }
+  } else if (error.message && error.message.includes('Only PNG and JPEG')) {
+    // Custom file type validation
+    statusCode = 400;
+    message = error.message;
+    code = 'INVALID_FILE_TYPE';
+  } else if (error.message && error.message.includes('Invalid image')) {
+    // Image validation errors from sharp
+    statusCode = 400;
+    message = error.message;
+    code = 'INVALID_IMAGE';
+  } else if (error.message && error.message.includes('Failed to compress')) {
+    // Image compression errors
+    statusCode = 500;
+    message = 'Failed to process image. Please try a different image.';
+    code = 'IMAGE_PROCESSING_ERROR';
+  } else if (error.message && error.message.includes('storage')) {
+    // Storage provider errors
+    statusCode = 500;
+    message = 'Failed to upload file. Please try again.';
+    code = 'STORAGE_ERROR';
   }
 
   // Log the error
