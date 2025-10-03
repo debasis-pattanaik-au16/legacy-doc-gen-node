@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { UserController } from '@/controllers/userController';
+import { UserController, avatarUploadMiddleware } from '@/controllers/userController';
 import { authenticate } from '@/middleware/auth';
 import { validate } from '@/utils/validation';
 import { userValidation } from '@/utils/validation';
@@ -33,7 +33,12 @@ router.patch(
   UserController.updatePassword
 );
 
-// POST /api/me/avatar - Upload avatar (coming in next task)
-// router.post('/me/avatar', authenticate, UserController.uploadAvatar);
+// POST /api/me/avatar - Upload avatar with compression
+router.post(
+  '/me/avatar',
+  authenticate,
+  avatarUploadMiddleware, // Multer handles file upload
+  UserController.uploadAvatar
+);
 
 export default router;

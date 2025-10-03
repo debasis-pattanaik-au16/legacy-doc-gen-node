@@ -1,10 +1,12 @@
 import { Response } from 'express';
 import bcrypt from 'bcryptjs';
+import multer from 'multer';
 import { User } from '@/models/User';
 import { AuthenticatedRequest } from '@/types';
 import { ResponseHandler } from '@/utils/response';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { logger } from '@/utils/logger';
+import { avatarService } from '@/services/avatarService';
 
 /**
  * User Profile & Settings Controller
@@ -164,7 +166,82 @@ export class UserController {
 
   /**
    * POST /api/me/avatar
-   * Upload and update user avatar
-   * Coming in next task...
+   * Upload and update user avatar with compression
+   * Multer middleware handles file upload to memory
    */
+  public static uploadAvatar = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId || req.user!.id || req.user!._id;
+    
+    // Check if file was uploaded
+    if (!req.file) {
+      ResponseHandler.validationError(res, 'No avatar file provided');
+      return;
+    }
+
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      ResponseHandler.notFound(res, 'User not found');
+      return;
+    }
+
+    try {
+      // Validate image
+      await avatarService.validateImage(req.file.buffer);
+
+      // Delete old avatar if exists (non-blocking)
+      if (user.avatarUrl) {
+        avatarService.deleteAvatar(user.avatarUrl).catch(err => {
+          logger.warn('Failed to delete old avatar:', err);
+        });
+      }
+
+      // Upload compressed avatar
+      const result = await avatarService.uploadAvatar(
+        userId,
+        req.file.buffer,
+        req.file.mimetype
+      );
+
+      // Update user profile with new avatar URL
+      user.avatarUrl = result.avatarUrl;
+      await user.save();
+
+      logger.info(`Avatar uploaded successfully for user: ${user.email}`, {
+        size: result.size,
+        compressed: result.compressed
+      });
+
+      ResponseHandler.success(res, {
+        avatarUrl: result.avatarUrl,
+        size: result.size,
+        compressed: result.compressed,
+        user: user.toProfileDTO()
+      }, 'Avatar uploaded successfully');
+    } catch (error: any) {
+      logger.error(`Avatar upload failed for user ${userId}:`, error);
+      ResponseHandler.error(res, error.message || 'Failed to upload avatar', 500);
+    }
+  });
 }
+
+/**
+ * Multer configuration for avatar upload
+ * Stores file in memory for processing
+ */
+export const avatarUploadMiddleware = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024, // 2MB before compression
+    files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PNG and JPEG images are allowed'));
+    }
+  }
+}).single('avatar');
