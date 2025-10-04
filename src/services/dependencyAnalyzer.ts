@@ -449,7 +449,33 @@ export class DependencyAnalyzer {
     }
 
     const fromDir = path.dirname(fromFile);
-    return path.resolve(fromDir, importPath);
+    let resolved = path.resolve(fromDir, importPath);
+    
+    // If path already has extension, return it
+    if (path.extname(resolved)) {
+      return resolved;
+    }
+    
+    // Try to resolve with common file extensions
+    const extensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
+    
+    for (const ext of extensions) {
+      const withExt = resolved + ext;
+      if (this.dependencyCache.has(withExt)) {
+        return withExt;
+      }
+    }
+    
+    // Also try index files
+    for (const ext of extensions) {
+      const indexPath = path.join(resolved, 'index' + ext);
+      if (this.dependencyCache.has(indexPath)) {
+        return indexPath;
+      }
+    }
+    
+    // As fallback, try with .ts extension (most common in TypeScript projects)
+    return resolved + '.ts';
   }
 
   private isExternalDependency(importPath: string): boolean {
@@ -513,8 +539,13 @@ export class DependencyAnalyzer {
     const defaultExcludes = ['node_modules', '.git', 'dist', 'build', '__pycache__'];
     const allExcludes = [...new Set([...defaultExcludes, ...configExcludes])];
     
-    return allExcludes.includes(dirName) || 
-           options.excludePatterns.some(pattern => dirName.match(pattern));
+    // Check exact matches first
+    if (allExcludes.includes(dirName)) {
+      return true;
+    }
+    
+    // Check pattern matches (convert glob patterns to regex)
+    return options.excludePatterns.some(pattern => this.matchPattern(dirName, pattern));
   }
 
   private shouldIncludeFile(filePath: string, options: DependencyAnalysisOptions): boolean {
@@ -548,22 +579,33 @@ export class DependencyAnalyzer {
     }
     
     if (options.includePatterns.length > 0) {
-      return options.includePatterns.some(pattern => filePath.match(pattern));
+      return options.includePatterns.some(pattern => this.matchPattern(filePath, pattern));
     }
-    return !options.excludePatterns.some(pattern => filePath.match(pattern));
+    return !options.excludePatterns.some(pattern => this.matchPattern(filePath, pattern));
   }
 
   /**
    * Match file path against glob pattern
+   * Safely converts glob patterns to regex
    */
   private matchPattern(filePath: string, pattern: string): boolean {
-    // Simple glob pattern matching
-    const regexPattern = pattern
-      .replace(/\*\*/g, '.*')
-      .replace(/\*/g, '[^/]*')
-      .replace(/\?/g, '.');
-    const regex = new RegExp(regexPattern);
-    return regex.test(filePath);
+    try {
+      // Escape special regex characters except glob wildcards
+      let regexPattern = pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Escape regex special chars
+        .replace(/\\\*/g, '___ESCAPED_STAR___')  // Temporarily protect escaped stars
+        .replace(/\*\*/g, '.*')                   // ** matches any path
+        .replace(/\*/g, '[^/]*')                  // * matches anything except /
+        .replace(/___ESCAPED_STAR___/g, '\\*')   // Restore escaped stars
+        .replace(/\?/g, '.');                     // ? matches single char
+      
+      const regex = new RegExp(regexPattern);
+      return regex.test(filePath);
+    } catch (error: any) {
+      // If pattern is invalid, log warning and return false
+      logger.warn(`Invalid pattern "${pattern}": ${error.message}`);
+      return false;
+    }
   }
 
   private calculateNodeLayers(nodes: DependencyGraphNode[]): void {
@@ -610,7 +652,10 @@ export class DependencyAnalyzer {
       // Try AI-powered analysis first if API service is available
       try {
         const analysis = await aiServiceManager.analyzeDependencyGraph(graph);
-        return analysis.issues || [];
+        const aiInsights = analysis.issues || [];
+        
+        // Transform AI insights to enhanced schema if needed
+        return this.transformInsightsToSchema(aiInsights, graph);
       } catch (aiError: any) {
         logger.warn('AI analysis failed, falling back to basic insights:', aiError.message);
       }
@@ -622,44 +667,179 @@ export class DependencyAnalyzer {
       return [];
     }
   }
+  
+  /**
+   * Transform AI-generated insights to match the enhanced schema
+   */
+  private transformInsightsToSchema(aiInsights: any[], graph: DependencyGraph): any[] {
+    return aiInsights.map(insight => {
+      // Check if insight already has enhanced fields
+      if (insight.affectedFiles && Array.isArray(insight.affectedFiles)) {
+        return insight; // Already in correct format
+      }
+      
+      // Transform old AI format to new schema
+      const transformed: any = {
+        type: this.mapInsightTypeToEnum(insight.type || insight.severity),
+        severity: insight.severity || 'medium',
+        message: insight.message || insight.description || 'Insight detected',
+        description: insight.description || insight.message || '',
+        affectedFiles: [] // Will be populated below
+      };
+      
+      // Try to extract affected files based on insight type
+      if (insight.type === 'Dependency' || insight.type === 'circular_dependency') {
+        // For circular dependencies, extract from graph
+        if (graph.circularDependencies.length > 0) {
+          const files: string[] = [];
+          graph.circularDependencies.forEach(circ => {
+            circ.cycle.forEach(nodeId => {
+              const node = graph.nodes.find(n => n.id === nodeId);
+              if (node && !files.includes(node.path)) {
+                files.push(node.path);
+              }
+            });
+          });
+          transformed.affectedFiles = files.slice(0, 10);
+        }
+      } else if (insight.type === 'Complexity') {
+        // For complexity, find highly coupled files
+        transformed.affectedFiles = graph.nodes
+          .filter(n => n.dependencies.length > 10)
+          .map(n => n.path)
+          .slice(0, 10);
+      } else if (insight.type === 'Orphan Nodes') {
+        // For orphan nodes, find leaf nodes
+        transformed.affectedFiles = graph.nodes
+          .filter(n => n.isLeaf && n.isEntry)
+          .map(n => n.path)
+          .slice(0, 10);
+      }
+      
+      // Preserve any additional properties from AI
+      Object.keys(insight).forEach(key => {
+        if (!transformed.hasOwnProperty(key)) {
+          transformed[key] = insight[key];
+        }
+      });
+      
+      return transformed;
+    });
+  }
+  
+  /**
+   * Map AI insight types to valid enum values
+   */
+  private mapInsightTypeToEnum(type: string): string {
+    const typeMap: Record<string, string> = {
+      'Dependency': 'circular_dependency',
+      'dependency': 'circular_dependency',
+      'Complexity': 'complexity',
+      'complexity': 'complexity',
+      'Orphan Nodes': 'orphan_code',
+      'orphan': 'orphan_code',
+      'external': 'external_dependencies',
+      'External': 'external_dependencies',
+      'coupling': 'coupling',
+      'Coupling': 'coupling',
+      'security': 'security',
+      'Security': 'security'
+    };
+    
+    return typeMap[type] || type.toLowerCase().replace(/\s+/g, '_');
+  }
 
   private generateBasicInsights(graph: DependencyGraph): any[] {
     const insights = [];
     
+    // Circular dependencies insight
     if (graph.circularDependencies.length > 0) {
+      const affectedFiles: string[] = [];
+      graph.circularDependencies.forEach(circ => {
+        circ.cycle.forEach(nodeId => {
+          const node = graph.nodes.find(n => n.id === nodeId);
+          if (node && !affectedFiles.includes(node.path)) {
+            affectedFiles.push(node.path);
+          }
+        });
+      });
+      
       insights.push({
         type: 'circular_dependency',
         severity: 'high',
-        message: `Found ${graph.circularDependencies.length} circular dependencies`,
-        count: graph.circularDependencies.length
+        message: `Found ${graph.circularDependencies.length} circular ${graph.circularDependencies.length === 1 ? 'dependency' : 'dependencies'}`,
+        description: `Circular dependencies can cause runtime errors, make code hard to test, and indicate design issues. ${graph.circularDependencies.length} circular ${graph.circularDependencies.length === 1 ? 'dependency was' : 'dependencies were'} detected affecting ${affectedFiles.length} files.`,
+        count: graph.circularDependencies.length,
+        affectedFiles: affectedFiles.slice(0, 10) // Limit to 10 files
       });
     }
     
+    // Complexity insight
     if (graph.metadata.totalNodes > 100) {
+      const highComplexityFiles = graph.nodes
+        .filter(n => n.dependencies.length > 10)
+        .map(n => n.path)
+        .slice(0, 10);
+      
+      insights.push({
+        type: 'complexity',
+        severity: graph.metadata.totalNodes > 200 ? 'high' : 'medium',
+        message: `Large codebase with ${graph.metadata.totalNodes} files`,
+        description: `Large codebases with ${graph.metadata.totalNodes} files can be difficult to maintain and navigate. Consider modular architecture patterns and better code organization.`,
+        nodeCount: graph.metadata.totalNodes,
+        affectedFiles: highComplexityFiles
+      });
+    }
+
+    // External dependencies insight
+    if (graph.externalLibraries.length > 50) {
+      const topLibraries = graph.externalLibraries
+        .sort((a, b) => b.usageCount - a.usageCount)
+        .slice(0, 5)
+        .map(lib => lib.name);
+      
+      insights.push({
+        type: 'external_dependencies',
+        severity: graph.externalLibraries.length > 100 ? 'high' : 'medium',
+        message: `High number of external dependencies (${graph.externalLibraries.length})`,
+        description: `Your project depends on ${graph.externalLibraries.length} external libraries. Too many dependencies can increase bundle size, security risks, and maintenance burden. Top libraries: ${topLibraries.join(', ')}.`,
+        libraryCount: graph.externalLibraries.length,
+        affectedFiles: [] // External deps don't have specific affected files
+      });
+    }
+
+    // High coupling insight
+    const avgDependencies = graph.edges.length / Math.max(graph.nodes.length, 1);
+    if (avgDependencies > 5) {
+      const highCouplingFiles = graph.nodes
+        .filter(n => n.dependencies.length > avgDependencies * 1.5)
+        .sort((a, b) => b.dependencies.length - a.dependencies.length)
+        .map(n => n.path)
+        .slice(0, 10);
+      
+      insights.push({
+        type: 'coupling',
+        severity: avgDependencies > 10 ? 'high' : 'medium',
+        message: `High coupling detected (avg ${Math.round(avgDependencies * 10) / 10} dependencies per file)`,
+        description: `Files have an average of ${Math.round(avgDependencies * 10) / 10} dependencies each. High coupling makes code harder to test, maintain, and refactor. Consider applying dependency injection or modular patterns.`,
+        averageDependencies: Math.round(avgDependencies * 100) / 100,
+        affectedFiles: highCouplingFiles
+      });
+    }
+    
+    // Deep dependency hierarchy insight
+    if (graph.metadata.maxDepth > 8) {
+      const deepFiles = graph.nodes
+        .filter(n => n.layer > graph.metadata.maxDepth * 0.7)
+        .map(n => n.path)
+        .slice(0, 10);
+      
       insights.push({
         type: 'complexity',
         severity: 'medium',
-        message: 'Large number of dependencies detected',
-        nodeCount: graph.metadata.totalNodes
-      });
-    }
-
-    if (graph.externalLibraries.length > 50) {
-      insights.push({
-        type: 'external_dependencies',
-        severity: 'medium',
-        message: 'High number of external dependencies',
-        libraryCount: graph.externalLibraries.length
-      });
-    }
-
-    const avgDependencies = graph.edges.length / Math.max(graph.nodes.length, 1);
-    if (avgDependencies > 10) {
-      insights.push({
-        type: 'coupling',
-        severity: 'medium',
-        message: 'High coupling detected - files have many dependencies',
-        averageDependencies: Math.round(avgDependencies * 100) / 100
+        message: `Deep dependency hierarchy (${graph.metadata.maxDepth} levels)`,
+        description: `Your codebase has a dependency hierarchy ${graph.metadata.maxDepth} levels deep. Deep hierarchies can make code harder to understand and change. Consider flattening the structure.`,
+        affectedFiles: deepFiles
       });
     }
     
@@ -671,7 +851,10 @@ export class DependencyAnalyzer {
       // Try AI-powered recommendations first if API service is available
       try {
         const analysis = await aiServiceManager.analyzeDependencyGraph(graph);
-        return analysis.suggestions || [];
+        const aiRecommendations = analysis.suggestions || [];
+        
+        // Transform AI recommendations to enhanced schema if needed
+        return this.transformRecommendationsToSchema(aiRecommendations, graph);
       } catch (aiError: any) {
         logger.warn('AI recommendations failed, falling back to basic recommendations:', aiError.message);
       }
@@ -683,48 +866,295 @@ export class DependencyAnalyzer {
       return [];
     }
   }
+  
+  /**
+   * Transform AI-generated recommendations to match the enhanced schema
+   */
+  private transformRecommendationsToSchema(aiRecommendations: any[], graph: DependencyGraph): any[] {
+    return aiRecommendations.map((rec, index) => {
+      // Check if recommendation already has enhanced fields
+      if (rec.id && rec.benefits && rec.implementation) {
+        return rec; // Already in correct format
+      }
+      
+      // Transform old AI format to new schema
+      const transformed: any = {
+        id: rec.id || `rec_ai_${Date.now()}_${index}`,
+        type: this.mapRecommendationTypeToEnum(rec.category || rec.type || 'refactor'),
+        priority: rec.priority || 'medium',
+        title: rec.title || rec.description?.substring(0, 50) || 'Recommendation',
+        description: rec.description || '',
+        benefits: [],
+        effort: rec.effort || 'medium',
+        implementation: []
+      };
+      
+      // Generate benefits based on recommendation category
+      if (!rec.benefits || rec.benefits.length === 0) {
+        transformed.benefits = this.generateBenefitsForRecommendation(transformed.type, transformed.description);
+      } else {
+        transformed.benefits = Array.isArray(rec.benefits) ? rec.benefits : [rec.benefits];
+      }
+      
+      // Generate implementation steps if missing
+      if (!rec.implementation || rec.implementation.length === 0) {
+        transformed.implementation = this.generateImplementationSteps(transformed.type, transformed.description);
+      } else {
+        transformed.implementation = Array.isArray(rec.implementation) ? rec.implementation : [rec.implementation];
+      }
+      
+      // Preserve any additional properties from AI
+      Object.keys(rec).forEach(key => {
+        if (!transformed.hasOwnProperty(key)) {
+          transformed[key] = rec[key];
+        }
+      });
+      
+      return transformed;
+    });
+  }
+  
+  /**
+   * Map AI recommendation types to valid enum values
+   */
+  private mapRecommendationTypeToEnum(type: string): string {
+    const typeMap: Record<string, string> = {
+      'Refactoring': 'refactor',
+      'refactoring': 'refactor',
+      'Dependency Management': 'optimize',
+      'dependency': 'optimize',
+      'Graph Generation': 'architecture',
+      'architecture': 'architecture',
+      'security': 'security',
+      'Security': 'security',
+      'performance': 'optimize',
+      'Performance': 'optimize'
+    };
+    
+    return typeMap[type] || 'refactor';
+  }
+  
+  /**
+   * Generate generic benefits based on recommendation type
+   */
+  private generateBenefitsForRecommendation(type: string, description: string): string[] {
+    const benefitTemplates: Record<string, string[]> = {
+      'refactor': [
+        'Improves code maintainability',
+        'Makes code easier to understand',
+        'Reduces technical debt',
+        'Enables safer refactoring',
+        'Improves code reusability'
+      ],
+      'optimize': [
+        'Improves application performance',
+        'Reduces resource consumption',
+        'Speeds up development workflow',
+        'Lowers operational costs',
+        'Enhances user experience'
+      ],
+      'architecture': [
+        'Improves system scalability',
+        'Enables better team collaboration',
+        'Reduces coupling between components',
+        'Makes system easier to extend',
+        'Improves testability'
+      ],
+      'security': [
+        'Reduces security vulnerabilities',
+        'Protects user data',
+        'Ensures compliance',
+        'Prevents security breaches',
+        'Builds user trust'
+      ]
+    };
+    
+    return benefitTemplates[type] || benefitTemplates['refactor'];
+  }
+  
+  /**
+   * Generate generic implementation steps based on recommendation type
+   */
+  private generateImplementationSteps(type: string, description: string): string[] {
+    const stepTemplates: Record<string, string[]> = {
+      'refactor': [
+        'Identify the code sections that need refactoring',
+        'Write tests to cover existing functionality',
+        'Refactor code incrementally',
+        'Run tests to verify behavior',
+        'Review and document changes',
+        'Deploy and monitor'
+      ],
+      'optimize': [
+        'Profile the application to identify bottlenecks',
+        'Analyze the optimization opportunities',
+        'Implement performance improvements',
+        'Measure performance gains',
+        'Document the optimizations',
+        'Monitor in production'
+      ],
+      'architecture': [
+        'Review current architecture',
+        'Design improved architecture',
+        'Plan migration strategy',
+        'Implement changes incrementally',
+        'Update documentation',
+        'Train team on new patterns'
+      ],
+      'security': [
+        'Conduct security audit',
+        'Identify vulnerabilities',
+        'Implement security fixes',
+        'Add security tests',
+        'Document security measures',
+        'Schedule regular reviews'
+      ]
+    };
+    
+    return stepTemplates[type] || stepTemplates['refactor'];
+  }
 
   private generateBasicRecommendations(graph: DependencyGraph, insights: any[]): any[] {
     const recommendations = [];
     
+    // Circular dependencies recommendation
     if (graph.circularDependencies.length > 0) {
       recommendations.push({
+        id: `rec_circular_${Date.now()}`,
         type: 'refactor',
         priority: 'high',
-        description: 'Break circular dependencies by extracting shared functionality',
-        action: 'Create interface or base class to eliminate circular references',
-        impact: 'Improves maintainability and reduces coupling'
+        title: 'Break Circular Dependencies',
+        description: `Your codebase has ${graph.circularDependencies.length} circular ${graph.circularDependencies.length === 1 ? 'dependency' : 'dependencies'}. These can cause runtime errors, make testing difficult, and indicate design problems that should be addressed.`,
+        benefits: [
+          'Eliminates potential runtime initialization errors',
+          'Makes code easier to test in isolation',
+          'Improves code maintainability and readability',
+          'Enables better build optimization',
+          'Reduces cognitive complexity for developers'
+        ],
+        effort: graph.circularDependencies.length > 5 ? 'high' : 'medium',
+        implementation: [
+          'Identify the circular dependency chain using dependency visualization tools',
+          'Extract shared functionality into a separate module or service',
+          'Use dependency injection to break direct dependencies',
+          'Consider applying the Dependency Inversion Principle',
+          'Create interfaces or abstract classes to decouple modules',
+          'Refactor imports to use indirect references where appropriate',
+          'Add unit tests to verify the refactored modules work correctly'
+        ]
       });
     }
     
+    // External dependencies recommendation
     if (graph.externalLibraries.length > 50) {
       recommendations.push({
-        type: 'optimization',
-        priority: 'medium',
-        description: 'Consider reducing external dependencies',
-        action: 'Audit dependencies and remove unused packages',
-        impact: 'Reduces bundle size and security vulnerabilities'
+        id: `rec_extdeps_${Date.now()}`,
+        type: 'optimize',
+        priority: graph.externalLibraries.length > 100 ? 'high' : 'medium',
+        title: 'Reduce External Dependencies',
+        description: `Your project depends on ${graph.externalLibraries.length} external libraries. Excessive dependencies increase bundle size, attack surface, and maintenance burden.`,
+        benefits: [
+          `Reduces bundle size (potentially by 20-40%)`,
+          'Decreases security vulnerabilities',
+          'Speeds up installation and build times',
+          'Reduces maintenance complexity',
+          'Lowers risk of supply chain attacks'
+        ],
+        effort: 'medium',
+        implementation: [
+          'Run dependency audit: npm list --all or yarn list',
+          'Identify unused dependencies with tools like depcheck',
+          'Remove dev dependencies from production builds',
+          'Replace large libraries with lighter alternatives',
+          'Consider tree-shaking to eliminate unused code',
+          'Use dynamic imports for non-critical features',
+          'Document why each dependency is needed'
+        ]
       });
     }
 
+    // High coupling recommendation
     const avgDependencies = graph.edges.length / Math.max(graph.nodes.length, 1);
     if (avgDependencies > 10) {
       recommendations.push({
+        id: `rec_coupling_${Date.now()}`,
         type: 'architecture',
         priority: 'medium',
-        description: 'High coupling detected - consider architectural refactoring',
-        action: 'Apply dependency injection or modular architecture patterns',
-        impact: 'Improves testability and code organization'
+        title: 'Reduce Code Coupling',
+        description: `Files have an average of ${Math.round(avgDependencies * 10) / 10} dependencies each. High coupling makes the codebase brittle and difficult to change safely.`,
+        benefits: [
+          'Makes individual modules easier to test',
+          'Enables safe refactoring and changes',
+          'Improves code reusability',
+          'Reduces ripple effects when making changes',
+          'Facilitates team collaboration with clear boundaries'
+        ],
+        effort: 'high',
+        implementation: [
+          'Apply Single Responsibility Principle to each module',
+          'Introduce dependency injection patterns',
+          'Use interfaces to define contracts between modules',
+          'Apply the Facade pattern to simplify complex subsystems',
+          'Extract service layers for shared functionality',
+          'Use event-driven architecture for loose coupling',
+          'Refactor one high-coupling module at a time'
+        ]
       });
     }
 
+    // Code organization recommendation
     if (graph.metadata.totalNodes > 100 && graph.clusters.length < 5) {
       recommendations.push({
-        type: 'organization',
+        id: `rec_organization_${Date.now()}`,
+        type: 'architecture',
         priority: 'low',
-        description: 'Large codebase with few logical groupings',
-        action: 'Organize code into feature-based modules or layers',
-        impact: 'Improves code navigation and team collaboration'
+        title: 'Improve Code Organization',
+        description: `With ${graph.metadata.totalNodes} files but only ${graph.clusters.length} logical groupings, your codebase could benefit from better organization.`,
+        benefits: [
+          'Makes codebase easier to navigate',
+          'Helps new developers onboard faster',
+          'Enables better code ownership and team structure',
+          'Improves IDE performance and code search',
+          'Facilitates micro-frontend or modular architectures'
+        ],
+        effort: 'medium',
+        implementation: [
+          'Group files by feature rather than by type',
+          'Create clear module boundaries with index files',
+          'Use folder structure to represent architecture layers',
+          'Apply Domain-Driven Design principles',
+          'Document the organizational structure in README',
+          'Use linting rules to enforce architectural boundaries',
+          'Consider monorepo tools if managing multiple packages'
+        ]
+      });
+    }
+
+    // Deep hierarchy recommendation
+    if (graph.metadata.maxDepth > 8) {
+      recommendations.push({
+        id: `rec_hierarchy_${Date.now()}`,
+        type: 'refactor',
+        priority: 'medium',
+        title: 'Flatten Dependency Hierarchy',
+        description: `Your codebase has a ${graph.metadata.maxDepth}-level deep dependency hierarchy. Deep hierarchies increase complexity and make changes riskier.`,
+        benefits: [
+          'Reduces cognitive load when understanding code',
+          'Makes dependencies easier to track',
+          'Speeds up build and compilation times',
+          'Reduces cascade effects of breaking changes',
+          'Improves code testability'
+        ],
+        effort: 'medium',
+        implementation: [
+          'Identify the deepest dependency chains',
+          'Extract common utilities to a shared module',
+          'Invert dependencies where appropriate',
+          'Use dependency injection to flatten imports',
+          'Consider creating platform/core layers',
+          'Refactor deep chains into sibling relationships',
+          'Add architecture decision records (ADRs)'
+        ]
       });
     }
     

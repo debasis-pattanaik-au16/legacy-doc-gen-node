@@ -31,6 +31,31 @@ router.get('/:projectId', authenticate, analysisController.getAnalysis);
 router.get('/:projectId/summary', authenticate, analysisController.getAnalysisSummary);
 
 /**
+ * @route   GET /api/analysis/:projectId/insights
+ * @desc    Get AI-generated insights (filterable by impact, category)
+ * @query   impact - Filter by impact level (low, medium, high, critical)
+ * @query   category - Filter by category (architecture, performance, maintainability, security)
+ * @access  Private
+ */
+router.get('/:projectId/insights', authenticate, analysisController.getInsights);
+
+/**
+ * @route   GET /api/analysis/:projectId/recommendations
+ * @desc    Get actionable recommendations (filterable by priority, type)
+ * @query   priority - Filter by priority (low, medium, high, critical)
+ * @query   type - Filter by type (refactor, optimize, security, architecture)
+ * @access  Private
+ */
+router.get('/:projectId/recommendations', authenticate, analysisController.getRecommendations);
+
+/**
+ * @route   GET /api/analysis/:projectId/critical
+ * @desc    Get all critical issues (critical insights + high-priority recommendations)
+ * @access  Private
+ */
+router.get('/:projectId/critical', authenticate, analysisController.getCriticalIssues);
+
+/**
  * @route   DELETE /api/analysis/:projectId
  * @desc    Delete analysis results (project owner only)
  * @access  Private

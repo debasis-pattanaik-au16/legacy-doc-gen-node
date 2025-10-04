@@ -142,59 +142,97 @@ export class JavaScriptParser implements LanguageParser {
     const components: ComponentNode[] = [];
     const sourceLines = sourceCode?.split('\n') || [];
 
-    traverse(ast, {
-      // Function declarations and expressions
-      FunctionDeclaration: (path: NodePath<t.FunctionDeclaration>) => {
-        const node = this.createFunctionNode(path, sourceLines);
-        if (node) components.push(node);
-      },
-      
-      FunctionExpression: (path: NodePath<t.FunctionExpression>) => {
-        if (t.isVariableDeclarator(path.parent) && t.isIdentifier(path.parent.id)) {
-          const node = this.createFunctionNode(path, sourceLines, path.parent.id.name);
-          if (node) components.push(node);
+    try {
+      traverse(ast, {
+        // Function declarations and expressions
+        FunctionDeclaration: (path: NodePath<t.FunctionDeclaration>) => {
+          try {
+            const node = this.createFunctionNode(path, sourceLines);
+            if (node) components.push(node);
+          } catch (err) {
+            logger.debug(`Failed to process function declaration: ${err}`);
+          }
+        },
+        
+        FunctionExpression: (path: NodePath<t.FunctionExpression>) => {
+          try {
+            if (t.isVariableDeclarator(path.parent) && t.isIdentifier(path.parent.id)) {
+              const node = this.createFunctionNode(path, sourceLines, path.parent.id.name);
+              if (node) components.push(node);
+            }
+          } catch (err) {
+            logger.debug(`Failed to process function expression: ${err}`);
+          }
+        },
+
+        ArrowFunctionExpression: (path: NodePath<t.ArrowFunctionExpression>) => {
+          try {
+            if (t.isVariableDeclarator(path.parent) && t.isIdentifier(path.parent.id)) {
+              const node = this.createFunctionNode(path, sourceLines, path.parent.id.name);
+              if (node) components.push(node);
+            }
+          } catch (err) {
+            logger.debug(`Failed to process arrow function: ${err}`);
+          }
+        },
+
+        // Class declarations
+        ClassDeclaration: (path: NodePath<t.ClassDeclaration>) => {
+          try {
+            const node = this.createClassNode(path, sourceLines);
+            if (node) components.push(node);
+          } catch (err) {
+            logger.debug(`Failed to process class declaration: ${err}`);
+          }
+        },
+
+        // TypeScript interfaces
+        TSInterfaceDeclaration: (path: NodePath<any>) => {
+          try {
+            const node = this.createInterfaceNode(path, sourceLines);
+            if (node) components.push(node);
+          } catch (err) {
+            logger.debug(`Failed to process interface: ${err}`);
+          }
+        },
+
+        // TypeScript type aliases
+        TSTypeAliasDeclaration: (path: NodePath<any>) => {
+          try {
+            const node = this.createTypeAliasNode(path, sourceLines);
+            if (node) components.push(node);
+          } catch (err) {
+            logger.debug(`Failed to process type alias: ${err}`);
+          }
+        },
+
+        // Variable declarations (constants, variables)
+        VariableDeclarator: (path: NodePath<t.VariableDeclarator>) => {
+          try {
+            if (t.isIdentifier(path.node.id) && !t.isFunctionExpression(path.node.init) && !t.isArrowFunctionExpression(path.node.init)) {
+              const node = this.createVariableNode(path, sourceLines);
+              if (node) components.push(node);
+            }
+          } catch (err) {
+            logger.debug(`Failed to process variable declarator: ${err}`);
+          }
+        },
+
+        // Enum declarations (TypeScript)
+        TSEnumDeclaration: (path: NodePath<any>) => {
+          try {
+            const node = this.createEnumNode(path, sourceLines);
+            if (node) components.push(node);
+          } catch (err) {
+            logger.debug(`Failed to process enum: ${err}`);
+          }
         }
-      },
-
-      ArrowFunctionExpression: (path: NodePath<t.ArrowFunctionExpression>) => {
-        if (t.isVariableDeclarator(path.parent) && t.isIdentifier(path.parent.id)) {
-          const node = this.createFunctionNode(path, sourceLines, path.parent.id.name);
-          if (node) components.push(node);
-        }
-      },
-
-      // Class declarations
-      ClassDeclaration: (path: NodePath<t.ClassDeclaration>) => {
-        const node = this.createClassNode(path, sourceLines);
-        if (node) components.push(node);
-      },
-
-      // TypeScript interfaces
-      TSInterfaceDeclaration: (path: NodePath<any>) => {
-        const node = this.createInterfaceNode(path, sourceLines);
-        if (node) components.push(node);
-      },
-
-      // TypeScript type aliases
-      TSTypeAliasDeclaration: (path: NodePath<any>) => {
-        const node = this.createTypeAliasNode(path, sourceLines);
-        if (node) components.push(node);
-      },
-
-      // Variable declarations (constants, variables)
-      VariableDeclarator: (path: NodePath<t.VariableDeclarator>) => {
-        if (t.isIdentifier(path.node.id) && !t.isFunctionExpression(path.node.init) && !t.isArrowFunctionExpression(path.node.init)) {
-          const node = this.createVariableNode(path, sourceLines);
-          if (node) components.push(node);
-        }
-      },
-
-      // Enum declarations (TypeScript)
-      TSEnumDeclaration: (path: NodePath<any>) => {
-        const node = this.createEnumNode(path, sourceLines);
-        if (node) components.push(node);
-      }
-    });
+      });
+    } catch (error: any) {
+      // Handle Babel traverse internal errors gracefully
+      logger.warn(`Babel traverse error while extracting components: ${error.message}`);
+      // Continue with whatever components were extracted before the error
+    }
 
     return components;
   }
@@ -205,42 +243,56 @@ export class JavaScriptParser implements LanguageParser {
   public extractImports(ast: any): ImportNode[] {
     const imports: ImportNode[] = [];
 
-    traverse(ast, {
-      ImportDeclaration: (path: NodePath<t.ImportDeclaration>) => {
-        const node = path.node;
-        const importNode: ImportNode = {
-          source: node.source.value,
-          type: this.getImportType(node),
-          specifiers: node.specifiers.map(spec => ({
-            imported: this.getImportedName(spec),
-            local: this.getLocalName(spec),
-            isType: t.isImportSpecifier(spec) && spec.importKind === 'type'
-          })),
-          isTypeOnly: node.importKind === 'type',
-          isDynamic: false,
-          line: node.loc?.start.line || 0
-        };
-        imports.push(importNode);
-      },
-
-      // Dynamic imports
-      CallExpression: (path: NodePath<t.CallExpression>) => {
-        if (t.isImport(path.node.callee) && path.node.arguments.length > 0) {
-          const arg = path.node.arguments[0];
-          if (t.isStringLiteral(arg)) {
+    try {
+      traverse(ast, {
+        ImportDeclaration: (path: NodePath<t.ImportDeclaration>) => {
+          try {
+            const node = path.node;
             const importNode: ImportNode = {
-              source: arg.value,
-              type: 'default',
-              specifiers: [],
-              isTypeOnly: false,
-              isDynamic: true,
-              line: path.node.loc?.start.line || 0
+              source: node.source.value,
+              type: this.getImportType(node),
+              specifiers: node.specifiers.map(spec => ({
+                imported: this.getImportedName(spec),
+                local: this.getLocalName(spec),
+                isType: t.isImportSpecifier(spec) && spec.importKind === 'type'
+              })),
+              isTypeOnly: node.importKind === 'type',
+              isDynamic: false,
+              line: node.loc?.start.line || 0
             };
             imports.push(importNode);
+          } catch (err) {
+            logger.debug(`Failed to process import: ${err}`);
+          }
+        },
+
+        // Dynamic imports
+        CallExpression: (path: NodePath<t.CallExpression>) => {
+          try {
+            if (t.isImport(path.node.callee) && path.node.arguments.length > 0) {
+              const arg = path.node.arguments[0];
+              if (t.isStringLiteral(arg)) {
+                const importNode: ImportNode = {
+                  source: arg.value,
+                  type: 'default',
+                  specifiers: [],
+                  isTypeOnly: false,
+                  isDynamic: true,
+                  line: path.node.loc?.start.line || 0
+                };
+                imports.push(importNode);
+              }
+            }
+          } catch (err) {
+            logger.debug(`Failed to process dynamic import: ${err}`);
           }
         }
-      }
-    });
+      });
+    } catch (error: any) {
+      // Handle Babel traverse internal errors gracefully
+      logger.warn(`Babel traverse error while extracting imports: ${error.message}`);
+      // Continue with whatever imports were extracted before the error
+    }
 
     return imports;
   }
@@ -251,58 +303,76 @@ export class JavaScriptParser implements LanguageParser {
   public extractExports(ast: any): ExportNode[] {
     const exports: ExportNode[] = [];
 
-    traverse(ast, {
-      ExportDefaultDeclaration: (path: NodePath<t.ExportDefaultDeclaration>) => {
-        const node = path.node;
-        exports.push({
-          type: 'default',
-          name: this.getExportedName(node.declaration),
-          specifiers: [],
-          isTypeOnly: false,
-          line: node.loc?.start.line || 0
-        });
-      },
+    try {
+      traverse(ast, {
+        ExportDefaultDeclaration: (path: NodePath<t.ExportDefaultDeclaration>) => {
+          try {
+            const node = path.node;
+            exports.push({
+              type: 'default',
+              name: this.getExportedName(node.declaration),
+              specifiers: [],
+              isTypeOnly: false,
+              line: node.loc?.start.line || 0
+            });
+          } catch (err) {
+            logger.debug(`Failed to process export default: ${err}`);
+          }
+        },
 
-      ExportNamedDeclaration: (path: NodePath<t.ExportNamedDeclaration>) => {
-        const node = path.node;
-        
-        if (node.specifiers.length > 0) {
-          // Named exports with specifiers
-          exports.push({
-            type: 'named',
-            source: node.source?.value,
-            specifiers: node.specifiers.map(spec => ({
-              local: t.isExportSpecifier(spec) ? spec.local.name : '',
-              exported: t.isExportSpecifier(spec) ? 
-                (t.isIdentifier(spec.exported) ? spec.exported.name : spec.exported.value) : '',
-              isType: t.isExportSpecifier(spec) && spec.exportKind === 'type'
-            })),
-            isTypeOnly: node.exportKind === 'type',
-            line: node.loc?.start.line || 0
-          });
-        } else if (node.declaration) {
-          // Named export with declaration
-          exports.push({
-            type: 'named',
-            name: this.getExportedName(node.declaration),
-            specifiers: [],
-            isTypeOnly: node.exportKind === 'type',
-            line: node.loc?.start.line || 0
-          });
+        ExportNamedDeclaration: (path: NodePath<t.ExportNamedDeclaration>) => {
+          try {
+            const node = path.node;
+            
+            if (node.specifiers.length > 0) {
+              // Named exports with specifiers
+              exports.push({
+                type: 'named',
+                source: node.source?.value,
+                specifiers: node.specifiers.map(spec => ({
+                  local: t.isExportSpecifier(spec) ? spec.local.name : '',
+                  exported: t.isExportSpecifier(spec) ? 
+                    (t.isIdentifier(spec.exported) ? spec.exported.name : spec.exported.value) : '',
+                  isType: t.isExportSpecifier(spec) && spec.exportKind === 'type'
+                })),
+                isTypeOnly: node.exportKind === 'type',
+                line: node.loc?.start.line || 0
+              });
+            } else if (node.declaration) {
+              // Named export with declaration
+              exports.push({
+                type: 'named',
+                name: this.getExportedName(node.declaration),
+                specifiers: [],
+                isTypeOnly: node.exportKind === 'type',
+                line: node.loc?.start.line || 0
+              });
+            }
+          } catch (err) {
+            logger.debug(`Failed to process named export: ${err}`);
+          }
+        },
+
+        ExportAllDeclaration: (path: NodePath<t.ExportAllDeclaration>) => {
+          try {
+            const node = path.node;
+            exports.push({
+              type: 'all',
+              source: node.source.value,
+              specifiers: [],
+              isTypeOnly: node.exportKind === 'type',
+              line: node.loc?.start.line || 0
+            });
+          } catch (err) {
+            logger.debug(`Failed to process export all: ${err}`);
+          }
         }
-      },
-
-      ExportAllDeclaration: (path: NodePath<t.ExportAllDeclaration>) => {
-        const node = path.node;
-        exports.push({
-          type: 'all',
-          source: node.source.value,
-          specifiers: [],
-          isTypeOnly: node.exportKind === 'type',
-          line: node.loc?.start.line || 0
-        });
-      }
-    });
+      });
+    } catch (error: any) {
+      // Handle Babel traverse internal errors gracefully
+      logger.warn(`Babel traverse error while extracting exports: ${error.message}`);
+      // Continue with whatever exports were extracted before the error
+    }
 
     return exports;
   }

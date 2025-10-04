@@ -171,7 +171,39 @@ export interface IAnalysisResult extends Document {
   databaseSchemas: DatabaseSchema[];
   architecturePatterns: string[];
   complexityMetrics: ComplexityMetrics;
+  insights?: AnalysisInsight[];         // AI-generated insights (Phase 1)
+  recommendations?: Recommendation[];    // Actionable recommendations (Phase 1)
   generatedAt: Date;
+}
+
+// Analysis Insights (from DependencyAnalyzer)
+export interface AnalysisInsight {
+  type: 'warning' | 'info' | 'suggestion' | 'error';
+  category: 'architecture' | 'performance' | 'maintainability' | 'security';
+  title: string;
+  description: string;
+  impact: 'low' | 'medium' | 'high' | 'critical';
+  affectedFiles: string[];
+  codeExamples?: CodeExample[];
+}
+
+export interface CodeExample {
+  code: string;
+  file: string;
+  line: number;
+  context: string;
+}
+
+// Recommendations (from DependencyAnalyzer)
+export interface Recommendation {
+  id: string;
+  type: 'refactor' | 'optimize' | 'security' | 'architecture';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  title: string;
+  description: string;
+  benefits: string[];
+  effort: 'low' | 'medium' | 'high';
+  implementation: string[];
 }
 
 // Documentation Types

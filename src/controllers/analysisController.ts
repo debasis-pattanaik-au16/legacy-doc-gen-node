@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AnalysisResult } from '@/models/AnalysisResult';
 import { Project } from '@/models/Project';
 import { DependencyAnalyzer } from '@/services/dependencyAnalyzer';
+import { AnalysisResultTransformer } from '@/services/transformers/AnalysisResultTransformer';
 import { logger } from '@/utils/logger';
 import { asyncHandler, AppError } from '@/middleware/errorHandler';
 import { ResponseHandler } from '@/utils/response';
@@ -112,10 +113,118 @@ export class AnalysisController {
       componentsByType: this.groupComponentsByType(analysisResult.components),
       dependenciesByType: this.groupDependenciesByType(analysisResult.dependencies),
       apiEndpointsByMethod: this.groupApiEndpointsByMethod(analysisResult.apiEndpoints),
+      // NEW: Insights and recommendations summary
+      totalInsights: analysisResult.insights?.length || 0,
+      totalRecommendations: analysisResult.recommendations?.length || 0,
+      insightsByImpact: this.groupInsightsByImpact(analysisResult.insights || []),
+      insightsByCategory: this.groupInsightsByCategory(analysisResult.insights || []),
+      recommendationsByPriority: this.groupRecommendationsByPriority(analysisResult.recommendations || []),
+      recommendationsByType: this.groupRecommendationsByType(analysisResult.recommendations || []),
+      criticalIssuesCount: this.getCriticalIssuesCount(analysisResult),
       lastUpdated: (analysisResult as any).updatedAt
     };
 
     ResponseHandler.success(res, summary, 'Analysis summary retrieved successfully');
+  });
+
+  /**
+   * Get insights for a project
+   * GET /api/analysis/:projectId/insights
+   */
+  getInsights = asyncHandler(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const { projectId } = req.params;
+    const { impact, category } = req.query;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      throw new AppError('Authentication required', 401);
+    }
+
+    const analysisResult = await AnalysisResult.findOne({ projectId });
+
+    if (!analysisResult) {
+      throw new AppError('Analysis not found', 404);
+    }
+
+    let insights = analysisResult.insights || [];
+
+    // Filter by impact if specified
+    if (impact && typeof impact === 'string') {
+      insights = insights.filter(i => i.impact === impact);
+    }
+
+    // Filter by category if specified
+    if (category && typeof category === 'string') {
+      insights = insights.filter(i => i.category === category);
+    }
+
+    ResponseHandler.success(res, insights, 'Insights retrieved successfully');
+  });
+
+  /**
+   * Get recommendations for a project
+   * GET /api/analysis/:projectId/recommendations
+   */
+  getRecommendations = asyncHandler(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const { projectId } = req.params;
+    const { priority, type } = req.query;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      throw new AppError('Authentication required', 401);
+    }
+
+    const analysisResult = await AnalysisResult.findOne({ projectId });
+
+    if (!analysisResult) {
+      throw new AppError('Analysis not found', 404);
+    }
+
+    let recommendations = analysisResult.recommendations || [];
+
+    // Filter by priority if specified
+    if (priority && typeof priority === 'string') {
+      recommendations = recommendations.filter(r => r.priority === priority);
+    }
+
+    // Filter by type if specified
+    if (type && typeof type === 'string') {
+      recommendations = recommendations.filter(r => r.type === type);
+    }
+
+    ResponseHandler.success(res, recommendations, 'Recommendations retrieved successfully');
+  });
+
+  /**
+   * Get critical issues (critical insights + high-priority recommendations)
+   * GET /api/analysis/:projectId/critical
+   */
+  getCriticalIssues = asyncHandler(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const { projectId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      throw new AppError('Authentication required', 401);
+    }
+
+    const analysisResult = await AnalysisResult.findOne({ projectId });
+
+    if (!analysisResult) {
+      throw new AppError('Analysis not found', 404);
+    }
+
+    const criticalInsights = (analysisResult.insights || []).filter(i => i.impact === 'critical');
+    const criticalRecommendations = (analysisResult.recommendations || []).filter(
+      r => r.priority === 'critical' || r.priority === 'high'
+    );
+
+    const criticalIssues = {
+      totalCount: criticalInsights.length + criticalRecommendations.length,
+      insights: criticalInsights,
+      recommendations: criticalRecommendations
+    };
+
+    ResponseHandler.success(res, criticalIssues, 'Critical issues retrieved successfully');
   });
 
   /**
@@ -162,30 +271,48 @@ export class AnalysisController {
         throw new AppError('Project files not found. Please upload project files first.', 400);
       }
 
-      // Perform dependency analysis using existing method
+      // Perform dependency analysis using DependencyAnalyzer
       logger.info(`Starting dependency analysis for path: ${projectPath}`);
       const dependencyResult = await this.dependencyAnalyzer.analyzeDependencies(projectPath);
-      logger.info(`Dependency analysis completed. Cache size: ${this.dependencyAnalyzer.dependencyCache.size}`);
+      logger.info(`Dependency analysis completed. Nodes: ${dependencyResult.graph.nodes.length}, Edges: ${dependencyResult.graph.edges.length}`);
 
-      // Extract data from analysis results
-      const components = this.extractComponents(dependencyResult);
-      const dependencies = this.extractDependencies(dependencyResult);
-      const architecturePatterns = this.identifyArchitecturePatterns(dependencyResult);
-      const complexityMetrics = this.calculateComplexityMetrics(dependencyResult);
+      // Transform DependencyAnalysisResult to database format using transformer
+      logger.info('Transforming analysis result to database format...');
+      const transformedData = AnalysisResultTransformer.transform(
+        dependencyResult, 
+        project._id.toString()
+      );
 
-      logger.info(`Extracted ${components.length} components, ${dependencies.length} dependencies`);
+      logger.info(`Transformed data - Components: ${transformedData.components.length}, Dependencies: ${transformedData.dependencies.length}, Insights: ${transformedData.insights.length}, Recommendations: ${transformedData.recommendations.length}`);
+
+      // Also extract AST-level components for backward compatibility
+      const astComponents = this.extractComponents(dependencyResult);
+      logger.info(`Extracted ${astComponents.length} AST-level components from cache`);
+
+      // Merge transformer components with AST components (avoid duplicates)
+      const allComponents = [...transformedData.components];
+      const existingPaths = new Set(transformedData.components.map(c => c.filePath));
+      
+      for (const astComp of astComponents) {
+        if (!existingPaths.has(astComp.filePath)) {
+          allComponents.push(astComp);
+        }
+      }
 
       // Create or update analysis result document using upsert
       const analysisResult = await AnalysisResult.findOneAndUpdate(
         { projectId: project._id },
         {
-          projectId: project._id,
-          components,
-          dependencies,
-          apiEndpoints: [], // Will be populated by specific parsers
-          databaseSchemas: [], // Will be populated by specific parsers
-          architecturePatterns,
-          complexityMetrics
+          projectId: transformedData.projectId,
+          components: allComponents,
+          dependencies: transformedData.dependencies,
+          apiEndpoints: transformedData.apiEndpoints,
+          databaseSchemas: transformedData.databaseSchemas,
+          architecturePatterns: transformedData.architecturePatterns,
+          complexityMetrics: transformedData.complexityMetrics,
+          insights: transformedData.insights,                  // NEW: AI-generated insights
+          recommendations: transformedData.recommendations,    // NEW: Actionable recommendations
+          generatedAt: transformedData.generatedAt
         },
         { 
           upsert: true, 
@@ -193,6 +320,23 @@ export class AnalysisController {
           runValidators: true 
         }
       );
+
+      // Log insights and recommendations summary
+      if (transformedData.insights.length > 0) {
+        logger.info(`Analysis insights: ${transformedData.insights.length} total`);
+        const criticalInsights = transformedData.insights.filter(i => i.impact === 'critical');
+        if (criticalInsights.length > 0) {
+          logger.warn(`Found ${criticalInsights.length} critical insights`);
+        }
+      }
+      
+      if (transformedData.recommendations.length > 0) {
+        logger.info(`Analysis recommendations: ${transformedData.recommendations.length} total`);
+        const highPriority = transformedData.recommendations.filter(r => r.priority === 'critical' || r.priority === 'high');
+        if (highPriority.length > 0) {
+          logger.info(`${highPriority.length} high-priority recommendations`);
+        }
+      }
 
       // Update project status to analyzed
       await Project.findByIdAndUpdate(project._id, {
@@ -410,6 +554,47 @@ export class AnalysisController {
       acc[endpoint.method] = (acc[endpoint.method] || 0) + 1;
       return acc;
     }, {});
+  }
+
+  /**
+   * NEW: Helper methods for insights and recommendations
+   */
+  private groupInsightsByImpact(insights: any[]): Record<string, number> {
+    return insights.reduce((acc, insight) => {
+      acc[insight.impact] = (acc[insight.impact] || 0) + 1;
+      return acc;
+    }, {});
+  }
+
+  private groupInsightsByCategory(insights: any[]): Record<string, number> {
+    return insights.reduce((acc, insight) => {
+      acc[insight.category] = (acc[insight.category] || 0) + 1;
+      return acc;
+    }, {});
+  }
+
+  private groupRecommendationsByPriority(recommendations: any[]): Record<string, number> {
+    return recommendations.reduce((acc, rec) => {
+      acc[rec.priority] = (acc[rec.priority] || 0) + 1;
+      return acc;
+    }, {});
+  }
+
+  private groupRecommendationsByType(recommendations: any[]): Record<string, number> {
+    return recommendations.reduce((acc, rec) => {
+      acc[rec.type] = (acc[rec.type] || 0) + 1;
+      return acc;
+    }, {});
+  }
+
+  private getCriticalIssuesCount(analysisResult: any): number {
+    const criticalInsights = (analysisResult.insights || []).filter(
+      (i: any) => i.impact === 'critical'
+    ).length;
+    const highPriorityRecs = (analysisResult.recommendations || []).filter(
+      (r: any) => r.priority === 'critical' || r.priority === 'high'
+    ).length;
+    return criticalInsights + highPriorityRecs;
   }
 }
 

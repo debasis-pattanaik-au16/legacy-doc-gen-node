@@ -155,6 +155,105 @@ const complexityMetricsSchema = new Schema({
 }, { _id: false });
 
 /**
+ * Code Example Schema
+ */
+const codeExampleSchema = new Schema({
+  code: {
+    type: String,
+    required: true
+  },
+  file: {
+    type: String,
+    required: true
+  },
+  line: {
+    type: Number,
+    required: true
+  },
+  context: {
+    type: String,
+    required: true
+  }
+}, { _id: false });
+
+/**
+ * Analysis Insight Schema (from DependencyAnalyzer)
+ */
+const analysisInsightSchema = new Schema({
+  type: {
+    type: String,
+    enum: ['warning', 'info', 'suggestion', 'error'],
+    required: true
+  },
+  category: {
+    type: String,
+    enum: ['architecture', 'performance', 'maintainability', 'security'],
+    required: true
+  },
+  title: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  impact: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'critical'],
+    required: true
+  },
+  affectedFiles: [{
+    type: String,
+    trim: true
+  }],
+  codeExamples: [codeExampleSchema]
+}, { _id: false });
+
+/**
+ * Recommendation Schema (from DependencyAnalyzer)
+ */
+const recommendationSchema = new Schema({
+  id: {
+    type: String,
+    required: true
+  },
+  type: {
+    type: String,
+    enum: ['refactor', 'optimize', 'security', 'architecture'],
+    required: true
+  },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'critical'],
+    required: true
+  },
+  title: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  benefits: [{
+    type: String,
+    trim: true
+  }],
+  effort: {
+    type: String,
+    enum: ['low', 'medium', 'high'],
+    required: true
+  },
+  implementation: [{
+    type: String,
+    trim: true
+  }]
+}, { _id: false });
+
+/**
  * Analysis Result Schema based on PRD specifications
  */
 const analysisResultSchema = new Schema<IAnalysisResult>({
@@ -174,7 +273,10 @@ const analysisResultSchema = new Schema<IAnalysisResult>({
   complexityMetrics: {
     type: complexityMetricsSchema,
     default: () => ({})
-  }
+  },
+  // Phase 1: AI-generated insights and recommendations
+  insights: [analysisInsightSchema],
+  recommendations: [recommendationSchema]
 }, {
   timestamps: true,
   toJSON: {
@@ -190,6 +292,11 @@ analysisResultSchema.index({ projectId: 1 }, { unique: true });
 analysisResultSchema.index({ createdAt: -1 });
 analysisResultSchema.index({ 'components.type': 1 });
 analysisResultSchema.index({ 'apiEndpoints.method': 1 });
+// Phase 1: Indexes for insights and recommendations
+analysisResultSchema.index({ 'insights.impact': 1 });
+analysisResultSchema.index({ 'insights.category': 1 });
+analysisResultSchema.index({ 'recommendations.priority': 1 });
+analysisResultSchema.index({ 'recommendations.type': 1 });
 
 // Instance Methods
 analysisResultSchema.methods.getComponentsByType = function(type: string) {
@@ -202,6 +309,20 @@ analysisResultSchema.methods.getApiEndpointsByMethod = function(method: string) 
 
 analysisResultSchema.methods.getDependenciesByType = function(type: string) {
   return this.dependencies.filter((dependency: Dependency) => dependency.type === type);
+};
+
+analysisResultSchema.methods.getInsightsByImpact = function(impact: string) {
+  return this.insights?.filter((insight: any) => insight.impact === impact) || [];
+};
+
+analysisResultSchema.methods.getRecommendationsByPriority = function(priority: string) {
+  return this.recommendations?.filter((rec: any) => rec.priority === priority) || [];
+};
+
+analysisResultSchema.methods.getCriticalIssues = function() {
+  const criticalInsights = this.insights?.filter((i: any) => i.impact === 'critical') || [];
+  const criticalRecs = this.recommendations?.filter((r: any) => r.priority === 'critical') || [];
+  return { insights: criticalInsights, recommendations: criticalRecs };
 };
 
 // Static Methods
