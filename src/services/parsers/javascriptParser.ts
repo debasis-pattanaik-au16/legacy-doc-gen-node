@@ -2,13 +2,11 @@ import { parse, ParserOptions } from '@babel/parser';
 import traverse, { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { 
-  ASTParser, 
   UnifiedAST, 
   ComponentNode, 
   ImportNode, 
   ExportNode, 
   ParseError, 
-  ParseOptions,
   FunctionNode,
   ClassNode,
   InterfaceNode,
@@ -19,15 +17,17 @@ import {
   ASTMetadata,
   ComponentType
 } from '@/types/ast';
+import { LanguageParser, ParseOptions, LanguageFeature } from '@/types/parser';
 import { logger } from '@/utils/logger';
 
 /**
  * High-accuracy JavaScript/TypeScript AST Parser
  * Implements comprehensive parsing with 99% accuracy for modern JS/TS features
  */
-export class JavaScriptParser implements ASTParser {
+export class JavaScriptParser implements LanguageParser {
   public readonly language = 'javascript';
   public readonly supportedExtensions = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
+  public readonly version = '1.0.0';
 
   /**
    * Parse JavaScript/TypeScript source code into unified AST
@@ -718,6 +718,23 @@ export class JavaScriptParser implements ASTParser {
   private getDecoratorName(decorator: any): string { return ''; }
   private getDecoratorArguments(decorator: any): string[] { return []; }
   private getNodeText(node: any): string { return ''; }
+  
+  /**
+   * Get supported language features
+   */
+  public getLanguageFeatures(): LanguageFeature[] {
+    return [
+      { name: 'JSX', supported: true, description: 'React JSX syntax' },
+      { name: 'TypeScript', supported: true, description: 'Full TypeScript support' },
+      { name: 'ES2020+', supported: true, description: 'Modern JavaScript features' },
+      { name: 'Decorators', supported: true, description: 'Experimental decorators' },
+      { name: 'Class Properties', supported: true, description: 'Class field declarations' },
+      { name: 'Dynamic Import', supported: true, description: 'Dynamic import() expressions' },
+      { name: 'Optional Chaining', supported: true, description: '?. operator' },
+      { name: 'Nullish Coalescing', supported: true, description: '?? operator' },
+      { name: 'Top-level Await', supported: true, description: 'Await at module level' },
+    ];
+  }
 }
 
 // Export singleton instance

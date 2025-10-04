@@ -14,8 +14,7 @@ import {
   ImportType
 } from '@/types/dependency';
 import { UnifiedAST, ImportNode, ComponentNode } from '@/types/ast';
-import { javascriptParser } from '@/services/parsers/javascriptParser';
-import { pythonParser } from '@/services/parsers/pythonParser';
+import { ParserFactory } from '@/services/parsers/ParserFactory';
 import { aiServiceManager } from '@/services/aiServiceManager';
 import { logger } from '@/utils/logger';
 
@@ -221,7 +220,8 @@ export class DependencyAnalyzer {
 
   private async discoverFiles(rootPath: string, options: DependencyAnalysisOptions): Promise<string[]> {
     const files: string[] = [];
-    const supportedExtensions = ['.js', '.jsx', '.ts', '.tsx', '.py', '.pyw', '.pyi'];
+    // Get supported extensions dynamically from ParserFactory
+    const supportedExtensions = ParserFactory.getSupportedExtensions();
 
     const walk = async (dir: string): Promise<void> => {
       const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -265,16 +265,15 @@ export class DependencyAnalyzer {
           continue;
         }
         
-        const ext = path.extname(file);
-        
-        let ast: UnifiedAST;
-        if (['.js', '.jsx', '.ts', '.tsx'].includes(ext)) {
-          ast = await javascriptParser.parse(content, file);
-        } else if (['.py', '.pyw', '.pyi'].includes(ext)) {
-          ast = await pythonParser.parse(content, file);
-        } else {
+        // Get parser dynamically based on file extension
+        const parser = ParserFactory.getParserForFile(file);
+        if (!parser) {
+          logger.debug(`No parser available for file: ${file}`);
           continue;
         }
+        
+        // Parse using the appropriate parser
+        const ast = await parser.parse(content, file);
 
         results.set(file, ast);
         this.dependencyCache.set(file, ast);

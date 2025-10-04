@@ -37,7 +37,7 @@
     "emitDecoratorMetadata": true,
     "skipLibCheck": true,
     "typeRoots": ["./node_modules/@types"],
-    "types": []
+    "types": ["node"]
   },
   "include": [
     "src/**/*"

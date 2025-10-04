@@ -14,6 +14,7 @@
     "test:cloud-model": "ts-node -r tsconfig-paths/register src/scripts/test-cloud-storage-model.ts",
     "test:phase4": "ts-node -r tsconfig-paths/register src/scripts/test-phase4-integration.ts",
     "test:phase5-api": "ts-node -r tsconfig-paths/register src/scripts/test-phase5-api.ts",
+    "test:parser": "ts-node -r tsconfig-paths/register src/scripts/test-parser-integration.ts",
     "migrate:cloud-storage": "ts-node -r tsconfig-paths/register src/scripts/add-cloud-storage-fields.ts",
     "migrate:verify": "ts-node -r tsconfig-paths/register src/scripts/add-cloud-storage-fields.ts verify",
     "migrate:user-settings": "ts-node -r tsconfig-paths/register src/scripts/migrate-user-settings.ts",

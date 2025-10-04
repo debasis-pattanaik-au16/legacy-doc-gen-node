@@ -1,23 +1,23 @@
 import { spawn } from 'child_process';
 import { 
-  ASTParser, 
   UnifiedAST, 
   ComponentNode, 
   ImportNode, 
   ExportNode, 
   ParseError, 
-  ParseOptions,
   ASTMetadata
 } from '@/types/ast';
+import { LanguageParser, ParseOptions, LanguageFeature } from '@/types/parser';
 import { logger } from '@/utils/logger';
 
 /**
  * High-accuracy Python AST Parser using Python's built-in ast module
  * Achieves 99% accuracy for Python code analysis
  */
-export class PythonParser implements ASTParser {
+export class PythonParser implements LanguageParser {
   public readonly language = 'python';
   public readonly supportedExtensions = ['.py', '.pyw', '.pyi'];
+  public readonly version = '1.0.0';
 
   public async parse(sourceCode: string, fileName: string, options?: ParseOptions): Promise<UnifiedAST> {
     const startTime = Date.now();
@@ -280,6 +280,21 @@ analyze_python_code()
       blankLines,
       features: []
     };
+  }
+  
+  /**
+   * Get supported language features
+   */
+  public getLanguageFeatures(): LanguageFeature[] {
+    return [
+      { name: 'Type Hints', supported: true, description: 'PEP 484 type annotations', minVersion: '3.5' },
+      { name: 'Dataclasses', supported: true, description: 'PEP 557 dataclasses', minVersion: '3.7' },
+      { name: 'F-Strings', supported: true, description: 'Formatted string literals', minVersion: '3.6' },
+      { name: 'Async/Await', supported: true, description: 'Asynchronous programming', minVersion: '3.5' },
+      { name: 'Pattern Matching', supported: true, description: 'Structural pattern matching', minVersion: '3.10' },
+      { name: 'Walrus Operator', supported: true, description: 'Assignment expressions (:=)', minVersion: '3.8' },
+      { name: 'Decorators', supported: true, description: 'Function and class decorators', minVersion: '2.4' },
+    ];
   }
 }
 
