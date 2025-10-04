@@ -94,8 +94,8 @@ export class ConfigLoader {
    * Get current configuration
    * @returns Current configuration or default if not loaded
    */
-  get(): AnalysisConfiguration {
-    if (!this.loaded) {
+  get(silent: boolean = false): AnalysisConfiguration {
+    if (!this.loaded && !silent) {
       logger.warn('Configuration not loaded, using defaults');
     }
     return this.config;

@@ -38,7 +38,8 @@ export class DependencyAnalyzer {
    * @param config Optional configuration object (uses ConfigLoader if not provided)
    */
   constructor(config?: AnalysisConfiguration) {
-    this.config = config || ConfigLoader.getInstance().get();
+    // Use provided config or get from ConfigLoader (silently uses defaults if not loaded)
+    this.config = config || ConfigLoader.getInstance().get(true);
     logger.info('DependencyAnalyzer initialized with configuration');
   }
 
