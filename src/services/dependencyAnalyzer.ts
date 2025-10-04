@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs/promises';
+import * as crypto from 'crypto';
 import { 
   DependencyGraph, 
   DependencyNode, 
@@ -19,6 +20,8 @@ import { aiServiceManager } from '@/services/aiServiceManager';
 import { logger } from '@/utils/logger';
 import { AnalysisConfiguration } from '@/types/config';
 import { ConfigLoader } from '@/config/ConfigLoader';
+import { AnalysisCache } from '@/types/cache';
+import { CacheFactory } from '@/cache/CacheFactory';
 
 /**
  * Advanced Dependency Analyzer
@@ -32,6 +35,7 @@ export class DependencyAnalyzer {
   private externalLibraries = new Map<string, ExternalLibrary>();
   private packageJsonCache = new Map<string, any>();
   private config: AnalysisConfiguration;
+  private cache: AnalysisCache;
 
   /**
    * Constructor - accepts optional configuration
@@ -40,7 +44,16 @@ export class DependencyAnalyzer {
   constructor(config?: AnalysisConfiguration) {
     // Use provided config or get from ConfigLoader (silently uses defaults if not loaded)
     this.config = config || ConfigLoader.getInstance().get(true);
-    logger.info('DependencyAnalyzer initialized with configuration');
+    
+    // Initialize cache if caching is enabled
+    if (this.config.performance.caching.enabled) {
+      this.cache = CacheFactory.fromConfig(this.config);
+      logger.info('DependencyAnalyzer initialized with caching enabled');
+    } else {
+      // Use a no-op cache if caching is disabled
+      this.cache = this.createNoOpCache();
+      logger.info('DependencyAnalyzer initialized with caching disabled');
+    }
   }
 
   /**
@@ -263,6 +276,8 @@ export class DependencyAnalyzer {
 
   private async parseAllFiles(files: string[]): Promise<Map<string, UnifiedAST>> {
     const results = new Map<string, UnifiedAST>();
+    let cacheHits = 0;
+    let cacheMisses = 0;
 
     for (const file of files) {
       try {
@@ -280,6 +295,21 @@ export class DependencyAnalyzer {
           continue;
         }
         
+        // Generate cache key from file path and content hash
+        const cacheKey = this.getCacheKey(file, content);
+        
+        // Check cache first
+        const cached = await this.cache.get<UnifiedAST>(cacheKey);
+        if (cached) {
+          logger.debug(`Cache hit for ${path.basename(file)}`);
+          results.set(file, cached);
+          this.dependencyCache.set(file, cached);
+          cacheHits++;
+          continue;
+        }
+        
+        cacheMisses++;
+        
         // Get parser dynamically based on file extension
         const parser = ParserFactory.getParserForFile(file);
         if (!parser) {
@@ -292,6 +322,9 @@ export class DependencyAnalyzer {
 
         results.set(file, ast);
         this.dependencyCache.set(file, ast);
+        
+        // Store in cache for future use
+        await this.cache.set(cacheKey, ast, this.config.performance.caching.ttl);
       } catch (error: any) {
         // Enhanced error logging for debugging
         const fileName = path.basename(file);
@@ -303,6 +336,17 @@ export class DependencyAnalyzer {
           logger.warn(`Failed to parse ${file}: ${error.message}`);
         }
       }
+    }
+
+    // Log cache statistics
+    if (this.config.performance.caching.enabled) {
+      const stats = this.cache.getStats();
+      const totalRequests = cacheHits + cacheMisses;
+      const hitRate = totalRequests > 0 ? (cacheHits / totalRequests * 100).toFixed(2) : '0.00';
+      logger.info(
+        `Cache statistics - Hits: ${cacheHits}, Misses: ${cacheMisses}, ` +
+        `Hit rate: ${hitRate}%, Total cache size: ${stats.size}`
+      );
     }
 
     return results;
@@ -719,6 +763,69 @@ export class DependencyAnalyzer {
   private calculateAbstractnessIndex(graph: DependencyGraph): number {
     // Simplified abstractness calculation
     return 0.3; // Placeholder
+  }
+
+  /**
+   * Generate cache key from file path and content
+   * Uses SHA-256 hash of content to detect changes
+   * @private
+   */
+  private getCacheKey(file: string, content: string): string {
+    const hash = crypto.createHash('sha256').update(content).digest('hex');
+    const relativePath = path.relative(process.cwd(), file);
+    return `ast:${relativePath}:${hash}`;
+  }
+
+  /**
+   * Create a no-op cache that doesn't store anything
+   * Used when caching is disabled in configuration
+   * @private
+   */
+  private createNoOpCache(): AnalysisCache {
+    return {
+      async get<T>(key: string): Promise<T | null> {
+        return null;
+      },
+      async set<T>(key: string, value: T, ttl?: number): Promise<void> {
+        // No-op
+      },
+      async has(key: string): Promise<boolean> {
+        return false;
+      },
+      async delete(key: string): Promise<boolean> {
+        return false;
+      },
+      async clear(): Promise<void> {
+        // No-op
+      },
+      async invalidatePattern(pattern: string): Promise<number> {
+        return 0;
+      },
+      getStats() {
+        return {
+          hits: 0,
+          misses: 0,
+          size: 0,
+          hitRate: 0,
+        };
+      },
+    };
+  }
+
+  /**
+   * Clear the analysis cache
+   * Useful for forcing a fresh analysis
+   */
+  public async clearCache(): Promise<void> {
+    await this.cache.clear();
+    logger.info('Analysis cache cleared');
+  }
+
+  /**
+   * Get cache statistics
+   */
+  public getCacheStats() {
+    return this.cache.getStats();
   }
 
   /**
