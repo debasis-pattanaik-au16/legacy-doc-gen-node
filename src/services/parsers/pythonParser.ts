@@ -113,6 +113,224 @@ import ast
 import json
 import sys
 
+def extract_type_annotation(annotation):
+    """Extract type annotation as a structured object"""
+    if annotation is None:
+        return None
+    
+    try:
+        # Simple name (e.g., str, int, MyClass)
+        if isinstance(annotation, ast.Name):
+            return {"type": "simple", "name": annotation.id}
+        
+        # Generic/Subscript types (e.g., List[str], Dict[str, int])
+        elif isinstance(annotation, ast.Subscript):
+            base_name = annotation.value.id if isinstance(annotation.value, ast.Name) else str(annotation.value)
+            
+            # Extract subscript arguments
+            args = []
+            if isinstance(annotation.slice, ast.Tuple):
+                # Multiple arguments like Dict[str, int]
+                args = [extract_type_annotation(elt) for elt in annotation.slice.elts]
+            else:
+                # Single argument like List[str]
+                args = [extract_type_annotation(annotation.slice)]
+            
+            return {
+                "type": "generic",
+                "name": base_name,
+                "args": args
+            }
+        
+        # Constant/Literal types (e.g., "string literal" in Literal["string literal"])
+        elif isinstance(annotation, ast.Constant):
+            return {"type": "literal", "value": annotation.value}
+        
+        # Union types (e.g., str | int in Python 3.10+)
+        elif isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+            return {
+                "type": "union",
+                "types": [extract_type_annotation(annotation.left), extract_type_annotation(annotation.right)]
+            }
+        
+        # Attribute access (e.g., typing.List)
+        elif isinstance(annotation, ast.Attribute):
+            return {"type": "qualified", "name": f"{annotation.value.id if isinstance(annotation.value, ast.Name) else ''}.{annotation.attr}"}
+        
+        # Tuple (for legacy Union types)
+        elif isinstance(annotation, ast.Tuple):
+            return {
+                "type": "tuple",
+                "elements": [extract_type_annotation(elt) for elt in annotation.elts]
+            }
+        
+        else:
+            return {"type": "unknown", "raw": ast.unparse(annotation) if hasattr(ast, 'unparse') else str(annotation)}
+    except:
+        return {"type": "error", "message": "Failed to parse annotation"}
+
+def extract_decorator_info(decorator_node):
+    """Extract detailed decorator information"""
+    try:
+        # Simple decorator like @property
+        if isinstance(decorator_node, ast.Name):
+            return {
+                "name": decorator_node.id,
+                "module": None,
+                "arguments": [],
+                "line": decorator_node.lineno
+            }
+        
+        # Decorator with arguments like @app.route('/path')
+        elif isinstance(decorator_node, ast.Call):
+            if isinstance(decorator_node.func, ast.Name):
+                name = decorator_node.func.id
+                module = None
+            elif isinstance(decorator_node.func, ast.Attribute):
+                name = decorator_node.func.attr
+                module = decorator_node.func.value.id if isinstance(decorator_node.func.value, ast.Name) else None
+            else:
+                name = str(decorator_node.func)
+                module = None
+            
+            # Extract arguments
+            args = []
+            for arg in decorator_node.args:
+                if isinstance(arg, ast.Constant):
+                    args.append({"type": "constant", "value": arg.value})
+                elif isinstance(arg, ast.Name):
+                    args.append({"type": "name", "value": arg.id})
+                else:
+                    args.append({"type": "expression", "value": ast.unparse(arg) if hasattr(ast, 'unparse') else str(arg)})
+            
+            return {
+                "name": name,
+                "module": module,
+                "arguments": args,
+                "line": decorator_node.lineno
+            }
+        
+        # Attribute decorator like @staticmethod
+        elif isinstance(decorator_node, ast.Attribute):
+            return {
+                "name": decorator_node.attr,
+                "module": decorator_node.value.id if isinstance(decorator_node.value, ast.Name) else None,
+                "arguments": [],
+                "line": decorator_node.lineno
+            }
+        
+        else:
+            return {
+                "name": str(decorator_node),
+                "module": None,
+                "arguments": [],
+                "line": getattr(decorator_node, 'lineno', 0)
+            }
+    except:
+        return {"name": "unknown", "module": None, "arguments": [], "line": 0}
+
+def extract_function_parameters(node):
+    """Extract function parameters with type hints"""
+    params = []
+    
+    # Regular arguments
+    for arg in node.args.args:
+        params.append({
+            "name": arg.arg,
+            "type": extract_type_annotation(arg.annotation),
+            "defaultValue": None,
+            "isOptional": False,
+            "kind": "positional"
+        })
+    
+    # Handle defaults for regular arguments
+    num_defaults = len(node.args.defaults)
+    if num_defaults > 0:
+        for i, default in enumerate(node.args.defaults):
+            param_index = len(params) - num_defaults + i
+            if param_index >= 0 and param_index < len(params):
+                params[param_index]["isOptional"] = True
+                if isinstance(default, ast.Constant):
+                    params[param_index]["defaultValue"] = default.value
+    
+    # *args
+    if node.args.vararg:
+        params.append({
+            "name": node.args.vararg.arg,
+            "type": extract_type_annotation(node.args.vararg.annotation),
+            "defaultValue": None,
+            "isOptional": False,
+            "kind": "vararg"
+        })
+    
+    # Keyword-only arguments
+    for arg in node.args.kwonlyargs:
+        params.append({
+            "name": arg.arg,
+            "type": extract_type_annotation(arg.annotation),
+            "defaultValue": None,
+            "isOptional": True,
+            "kind": "keyword-only"
+        })
+    
+    # **kwargs
+    if node.args.kwarg:
+        params.append({
+            "name": node.args.kwarg.arg,
+            "type": extract_type_annotation(node.args.kwarg.annotation),
+            "defaultValue": None,
+            "isOptional": False,
+            "kind": "kwarg"
+        })
+    
+    return params
+
+def is_dataclass(node):
+    """Check if a class is a dataclass"""
+    for decorator in node.decorator_list:
+        if isinstance(decorator, ast.Name) and decorator.id == 'dataclass':
+            return True
+        elif isinstance(decorator, ast.Attribute) and decorator.attr == 'dataclass':
+            return True
+        elif isinstance(decorator, ast.Call):
+            if isinstance(decorator.func, ast.Name) and decorator.func.id == 'dataclass':
+                return True
+            elif isinstance(decorator.func, ast.Attribute) and decorator.func.attr == 'dataclass':
+                return True
+    return False
+
+def is_pydantic_model(node, base_names):
+    """Check if a class is a Pydantic model"""
+    for base in node.bases:
+        if isinstance(base, ast.Name) and base.id in ['BaseModel', 'BaseSettings']:
+            return True
+        elif isinstance(base, ast.Attribute):
+            if base.attr in ['BaseModel', 'BaseSettings']:
+                return True
+    return 'BaseModel' in base_names or 'BaseSettings' in base_names
+
+def extract_class_properties(node):
+    """Extract class properties with type annotations"""
+    properties = []
+    
+    for item in node.body:
+        # Class variable with type annotation
+        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+            prop = {
+                "name": item.target.id,
+                "type": extract_type_annotation(item.annotation),
+                "defaultValue": None,
+                "line": item.lineno
+            }
+            
+            if item.value:
+                if isinstance(item.value, ast.Constant):
+                    prop["defaultValue"] = item.value.value
+            
+            properties.append(prop)
+    
+    return properties
+
 def analyze_python_code():
     source_code = '''${sourceCode.replace(/'/g, "\\'")}'''
     
@@ -122,36 +340,61 @@ def analyze_python_code():
         components = []
         imports = []
         exports = []
+        typing_imports = set()
         
+        # Track imports from typing module
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
+            if isinstance(node, ast.ImportFrom) and node.module == 'typing':
+                for alias in node.names:
+                    typing_imports.add(alias.name)
+        
+        # Process all nodes
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                params = extract_function_parameters(node)
+                decorators = [extract_decorator_info(d) for d in node.decorator_list]
+                return_type = extract_type_annotation(node.returns)
+                
                 components.append({
                     "id": f"func_{node.name}_{node.lineno}",
                     "name": node.name,
                     "type": "function",
                     "startLine": node.lineno,
                     "endLine": getattr(node, 'end_lineno', node.lineno),
-                    "visibility": "public",
+                    "visibility": "public" if not node.name.startswith('_') else "private",
                     "isExported": True,
-                    "decorators": [{"name": d.id if hasattr(d, 'id') else str(d), "arguments": [], "line": d.lineno} for d in node.decorator_list],
+                    "isAsync": isinstance(node, ast.AsyncFunctionDef),
+                    "parameters": params,
+                    "returnType": return_type,
+                    "decorators": decorators,
                     "annotations": [],
                     "children": [],
-                    "complexity": {"cyclomaticComplexity": 1, "cognitiveComplexity": 1, "linesOfCode": 1, "maintainabilityIndex": 100, "halsteadMetrics": {}}
+                    "complexity": {"cyclomaticComplexity": 1, "cognitiveComplexity": 1, "linesOfCode": getattr(node, 'end_lineno', node.lineno) - node.lineno + 1, "maintainabilityIndex": 100, "halsteadMetrics": {}}
                 })
             
             elif isinstance(node, ast.ClassDef):
+                decorators = [extract_decorator_info(d) for d in node.decorator_list]
+                properties = extract_class_properties(node)
+                base_names = [base.id if isinstance(base, ast.Name) else str(base) for base in node.bases]
+                is_dc = is_dataclass(node)
+                is_pydantic = is_pydantic_model(node, base_names)
+                
                 components.append({
                     "id": f"class_{node.name}_{node.lineno}",
                     "name": node.name,
                     "type": "class",
                     "startLine": node.lineno,
                     "endLine": getattr(node, 'end_lineno', node.lineno),
-                    "visibility": "public",
+                    "visibility": "public" if not node.name.startswith('_') else "private",
                     "isExported": True,
-                    "decorators": [{"name": d.id if hasattr(d, 'id') else str(d), "arguments": [], "line": d.lineno} for d in node.decorator_list],
+                    "isDataclass": is_dc,
+                    "isPydanticModel": is_pydantic,
+                    "bases": base_names,
+                    "properties": properties,
+                    "decorators": decorators,
                     "annotations": [],
                     "children": [],
-                    "complexity": {"cyclomaticComplexity": 1, "cognitiveComplexity": 1, "linesOfCode": 1, "maintainabilityIndex": 100, "halsteadMetrics": {}}
+                    "complexity": {"cyclomaticComplexity": 1, "cognitiveComplexity": 1, "linesOfCode": getattr(node, 'end_lineno', node.lineno) - node.lineno + 1, "maintainabilityIndex": 100, "halsteadMetrics": {}}
                 })
             
             elif isinstance(node, ast.Import):
