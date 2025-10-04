@@ -19,6 +19,8 @@ import {
 } from '@/types/ast';
 import { LanguageParser, ParseOptions, LanguageFeature } from '@/types/parser';
 import { logger } from '@/utils/logger';
+import { TypeScriptTypeResolver } from './TypeScriptTypeResolver';
+import { EnhancedTypeInfo, TypeContext } from '@/types/typeInfo';
 
 /**
  * High-accuracy JavaScript/TypeScript AST Parser
@@ -28,6 +30,12 @@ export class JavaScriptParser implements LanguageParser {
   public readonly language = 'javascript';
   public readonly supportedExtensions = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
   public readonly version = '1.0.0';
+  
+  private typeResolver: TypeScriptTypeResolver;
+  
+  constructor() {
+    this.typeResolver = new TypeScriptTypeResolver();
+  }
 
   /**
    * Parse JavaScript/TypeScript source code into unified AST
@@ -592,8 +600,10 @@ export class JavaScriptParser implements LanguageParser {
   }
 
   private extractReturnType(node: any): TypeInfo {
-    if (node.returnType) {
-      return this.convertTypeAnnotation(node.returnType);
+    if (node.returnType && node.returnType.typeAnnotation) {
+      return this.convertEnhancedTypeToTypeInfo(
+        this.typeResolver.resolveType(node.returnType.typeAnnotation, this.getDefaultContext())
+      );
     }
     return { name: 'any', isArray: false, isGeneric: false, genericTypes: [], isUnion: false, unionTypes: [], isNullable: false, isPrimitive: false };
   }
@@ -701,23 +711,66 @@ export class JavaScriptParser implements LanguageParser {
   private extractInterfaceProperties(node: any): any[] { return []; }
   private getMethodVisibility(member: any): 'public' | 'private' | 'protected' { return 'public'; }
   private getPropertyVisibility(member: any): 'public' | 'private' | 'protected' { return 'public'; }
-  private extractPropertyType(member: any): TypeInfo { 
+  private extractPropertyType(member: any): TypeInfo {
+    if (member.typeAnnotation && member.typeAnnotation.typeAnnotation) {
+      return this.convertEnhancedTypeToTypeInfo(
+        this.typeResolver.resolveType(member.typeAnnotation.typeAnnotation, this.getDefaultContext())
+      );
+    }
     return { name: 'any', isArray: false, isGeneric: false, genericTypes: [], isUnion: false, unionTypes: [], isNullable: false, isPrimitive: false };
   }
   private getParameterName(param: any): string { 
     return t.isIdentifier(param) ? param.name : 'param';
   }
   private extractParameterType(param: any): TypeInfo {
+    if (param.typeAnnotation && param.typeAnnotation.typeAnnotation) {
+      return this.convertEnhancedTypeToTypeInfo(
+        this.typeResolver.resolveType(param.typeAnnotation.typeAnnotation, this.getDefaultContext())
+      );
+    }
     return { name: 'any', isArray: false, isGeneric: false, genericTypes: [], isUnion: false, unionTypes: [], isNullable: false, isPrimitive: false };
   }
   private isOptionalParameter(param: any): boolean { return false; }
   private getDefaultValue(param: any): string | undefined { return undefined; }
   private convertTypeAnnotation(typeAnnotation: any): TypeInfo {
+    if (typeAnnotation && typeAnnotation.typeAnnotation) {
+      return this.convertEnhancedTypeToTypeInfo(
+        this.typeResolver.resolveType(typeAnnotation.typeAnnotation, this.getDefaultContext())
+      );
+    }
     return { name: 'any', isArray: false, isGeneric: false, genericTypes: [], isUnion: false, unionTypes: [], isNullable: false, isPrimitive: false };
   }
   private getDecoratorName(decorator: any): string { return ''; }
   private getDecoratorArguments(decorator: any): string[] { return []; }
   private getNodeText(node: any): string { return ''; }
+  
+  /**
+   * Convert EnhancedTypeInfo to TypeInfo for backward compatibility
+   */
+  private convertEnhancedTypeToTypeInfo(enhanced: EnhancedTypeInfo): TypeInfo {
+    return {
+      name: enhanced.name,
+      isArray: enhanced.isArray,
+      isGeneric: enhanced.isGeneric,
+      genericTypes: enhanced.genericTypes.map(t => this.convertEnhancedTypeToTypeInfo(t)),
+      isUnion: enhanced.isUnion,
+      unionTypes: enhanced.unionTypes.map(t => this.convertEnhancedTypeToTypeInfo(t)),
+      isNullable: enhanced.isNullable,
+      isPrimitive: enhanced.isPrimitive,
+    };
+  }
+  
+  /**
+   * Get default type resolution context
+   */
+  private getDefaultContext(): TypeContext {
+    return {
+      scope: 'module',
+      genericContext: new Map(),
+      typeAliases: new Map(),
+      imports: new Map(),
+    };
+  }
   
   /**
    * Get supported language features
