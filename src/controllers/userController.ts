@@ -149,7 +149,7 @@ export class UserController {
     const isMatch = await user.comparePassword(currentPassword);
     if (!isMatch) {
       logger.warn(`Failed password change attempt for user: ${user.email}`);
-      ResponseHandler.unauthorized(res, 'Current password is incorrect');
+      ResponseHandler.error(res, 'Current password is incorrect', 400, 'INVALID_PASSWORD');
       return;
     }
 
