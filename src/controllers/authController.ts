@@ -19,7 +19,9 @@ export class AuthController {
     // Check if user already exists
     const existingUser = await User.findByEmail(email);
     if (existingUser) {
-      ResponseHandler.validationError(res, 'User with this email already exists');
+      ResponseHandler.fieldValidationError(res, {
+        email: 'User with this email already exists'
+      }, 'Registration failed');
       return;
     }
 
@@ -215,7 +217,9 @@ export class AuthController {
 
     const user = await User.findByResetToken(token);
     if (!user) {
-      ResponseHandler.validationError(res, 'Invalid or expired reset token');
+      ResponseHandler.fieldValidationError(res, {
+        token: 'Invalid or expired reset token'
+      }, 'Password reset failed');
       return;
     }
 
@@ -238,7 +242,9 @@ export class AuthController {
 
     const user = await User.findByVerificationToken(token);
     if (!user) {
-      ResponseHandler.validationError(res, 'Invalid or expired verification token');
+      ResponseHandler.fieldValidationError(res, {
+        token: 'Invalid or expired verification token'
+      }, 'Email verification failed');
       return;
     }
 

@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { ApiSuccessResponse, ApiErrorResponse } from '@/types';
+import { ApiSuccessResponse, ApiErrorResponse, ValidationErrorResponse } from '@/types';
 import { logger } from '@/utils/logger';
 
 /**
@@ -67,6 +67,29 @@ export class ResponseHandler {
     details?: any
   ): Response<ApiErrorResponse> {
     return this.error(res, message, 400, 'VALIDATION_ERROR', details);
+  }
+
+  /**
+   * Send field-level validation error response
+   * Used for detailed field validation errors (e.g., from Joi)
+   */
+  public static fieldValidationError(
+    res: Response,
+    fields: Record<string, string>,
+    message: string = 'Validation failed'
+  ): Response<ApiErrorResponse> {
+    logger.warn(`API Validation Error: ${res.req.method} ${res.req.path}`, {
+      fields
+    });
+
+    return res.status(400).json({
+      success: false,
+      error: {
+        message,
+        code: 'VALIDATION_ERROR',
+        details: fields
+      }
+    });
   }
 
   /**

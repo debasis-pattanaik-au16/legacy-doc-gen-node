@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { IUser, IUserModel } from '../types';
+import { IUser, IUserModel, UserProfileDTO } from '../types';
 import { config } from '@/config/env';
 
 /**
@@ -57,6 +57,37 @@ const userSchema = new Schema<IUser>({
   },
   lastLogin: {
     type: Date
+  },
+  
+  // Profile & Settings (NEW)
+  company: {
+    type: String,
+    trim: true,
+    maxlength: [120, 'Company name cannot exceed 120 characters']
+  },
+  timezone: {
+    type: String,
+    default: 'UTC',
+    required: true
+  },
+  avatarUrl: {
+    type: String
+  },
+  notifications: {
+    productUpdates: {
+      type: Boolean,
+      default: false
+    },
+    analysisReady: {
+      type: Boolean,
+      default: true
+    }
+  },
+  preferences: {
+    autoSave: {
+      type: Boolean,
+      default: false
+    }
   }
 }, {
   timestamps: true, // Adds createdAt and updatedAt
@@ -137,6 +168,31 @@ userSchema.methods.generatePasswordResetToken = function(): string {
   this.passwordResetToken = crypto.createHash('sha256').update(token).digest('hex');
   this.passwordResetExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
   return token;
+};
+
+/**
+ * Convert user document to sanitized profile DTO
+ * Excludes sensitive fields like password, tokens, etc.
+ */
+userSchema.methods.toProfileDTO = function(): UserProfileDTO {
+  return {
+    id: this._id.toString(),
+    email: this.email,
+    name: this.name,
+    company: this.company,
+    timezone: this.timezone,
+    avatarUrl: this.avatarUrl,
+    notifications: {
+      productUpdates: this.notifications?.productUpdates ?? false,
+      analysisReady: this.notifications?.analysisReady ?? true
+    },
+    preferences: {
+      autoSave: this.preferences?.autoSave ?? false
+    },
+    role: this.role,
+    createdAt: this.createdAt.toISOString(),
+    updatedAt: this.updatedAt.toISOString()
+  };
 };
 
 // Static Methods

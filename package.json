@@ -16,6 +16,8 @@
     "test:phase5-api": "ts-node -r tsconfig-paths/register src/scripts/test-phase5-api.ts",
     "migrate:cloud-storage": "ts-node -r tsconfig-paths/register src/scripts/add-cloud-storage-fields.ts",
     "migrate:verify": "ts-node -r tsconfig-paths/register src/scripts/add-cloud-storage-fields.ts verify",
+    "migrate:user-settings": "ts-node -r tsconfig-paths/register src/scripts/migrate-user-settings.ts",
+    "migrate:user-settings:verify": "ts-node -r tsconfig-paths/register src/scripts/migrate-user-settings.ts verify",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix"
   },
@@ -56,6 +58,7 @@
     "nodemailer": "^6.9.7",
     "oci-sdk": "^2.118.1",
     "openai": "^4.20.1",
+    "sharp": "^0.34.4",
     "yauzl": "^2.10.0"
   },
   "devDependencies": {

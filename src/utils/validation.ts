@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { ValidationErrorResponse } from '@/types';
 
 /**
  * Validation schemas for API endpoints
@@ -92,6 +93,83 @@ export const userValidation = {
       }),
     subscriptionPlan: Joi.string()
       .valid('free', 'pro', 'enterprise')
+  }),
+
+  // Profile & Settings validation schemas (NEW)
+  updateProfileSettings: Joi.object({
+    name: Joi.string()
+      .trim()
+      .min(1)
+      .max(80)
+      .required()
+      .messages({
+        'string.min': 'Name must be at least 1 character long',
+        'string.max': 'Name cannot exceed 80 characters',
+        'any.required': 'Name is required'
+      }),
+    company: Joi.string()
+      .trim()
+      .max(120)
+      .allow('', null)
+      .optional()
+      .messages({
+        'string.max': 'Company name cannot exceed 120 characters'
+      }),
+    timezone: Joi.string()
+      .required()
+      .messages({
+        'any.required': 'Timezone is required'
+      }),
+    avatarUrl: Joi.string()
+      .uri()
+      .allow('', null)
+      .optional()
+      .messages({
+        'string.uri': 'Avatar URL must be a valid URL'
+      })
+  }),
+
+  updatePassword: Joi.object({
+    currentPassword: Joi.string()
+      .required()
+      .messages({
+        'any.required': 'Current password is required'
+      }),
+    newPassword: Joi.string()
+      .min(8)
+      .max(128)
+      .pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&#])[A-Za-z\\d@$!%*?&#]'))
+      .required()
+      .messages({
+        'string.min': 'Password must be at least 8 characters long',
+        'string.max': 'Password cannot exceed 128 characters',
+        'string.pattern.base': 'Password must include uppercase, lowercase, number, and special character',
+        'any.required': 'New password is required'
+      })
+  }),
+
+  updateNotifications: Joi.object({
+    productUpdates: Joi.boolean()
+      .required()
+      .messages({
+        'any.required': 'Product updates preference is required',
+        'boolean.base': 'Product updates must be true or false'
+      }),
+    analysisReady: Joi.boolean()
+      .required()
+      .messages({
+        'any.required': 'Analysis ready preference is required',
+        'boolean.base': 'Analysis ready must be true or false'
+      })
+  }),
+
+  updatePreferences: Joi.object({
+    autoSave: Joi.boolean()
+      .required()
+      .messages({
+        'any.required': 'Auto-save preference is required',
+        'boolean.base': 'Auto-save must be true or false'
+      })
   })
 };
 
@@ -111,9 +189,17 @@ export const projectValidation = {
     description: Joi.string()
       .trim()
       .max(500)
-      .allow('')
+      .allow('', null)
+      .optional()
       .messages({
         'string.max': 'Description cannot exceed 500 characters'
+      }),
+    type: Joi.string()
+      .valid('web', 'mobile', 'desktop', 'api', 'library', 'other')
+      .optional()
+      .default('web')
+      .messages({
+        'any.only': 'Project type must be one of: web, mobile, desktop, api, library, other'
       })
   }),
 
@@ -250,31 +336,57 @@ export const objectIdValidation = Joi.string()
   });
 
 /**
+ * Format Joi validation errors into ValidationErrorResponse structure
+ */
+export const formatValidationErrors = (error: Joi.ValidationError): ValidationErrorResponse => {
+  const fields: Record<string, string> = {};
+  
+  error.details.forEach(detail => {
+    const field = detail.path.join('.');
+    // Use the first error message for each field
+    if (!fields[field]) {
+      fields[field] = detail.message;
+    }
+  });
+
+  return {
+    code: 'VALIDATION_ERROR',
+    message: 'Validation failed',
+    fields
+  };
+};
+
+/**
  * Validation middleware factory
  */
 export const validate = (schema: Joi.ObjectSchema, property: 'body' | 'query' | 'params' = 'body') => {
   return (req: any, res: any, next: any) => {
+    // Log incoming data for debugging
+    console.log(`[VALIDATION] Validating ${property}:`, JSON.stringify(req[property], null, 2));
+    
     const { error, value } = schema.validate(req[property], {
       abortEarly: false,
       stripUnknown: true
     });
 
     if (error) {
-      const errorDetails = error.details.map(detail => ({
-        field: detail.path.join('.'),
-        message: detail.message
-      }));
+      // Format using the new ValidationErrorResponse structure
+      const validationError = formatValidationErrors(error);
+      
+      // Log validation error for debugging
+      console.log(`[VALIDATION ERROR] ${property} validation failed:`, validationError);
 
       return res.status(400).json({
         success: false,
         error: {
-          message: 'Validation failed',
-          code: 'VALIDATION_ERROR',
-          details: errorDetails
+          message: validationError.message,
+          code: validationError.code,
+          details: validationError.fields
         }
       });
     }
 
+    console.log(`[VALIDATION] ✅ Validation passed. Validated value:`, JSON.stringify(value, null, 2));
     req[property] = value;
     next();
   };
