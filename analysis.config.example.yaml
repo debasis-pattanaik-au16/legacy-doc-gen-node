@@ -1,0 +1,228 @@
+# Analysis Engine Configuration Example - YAML Format
+# This file shows common configuration scenarios
+
+# Basic Configuration - Enable all languages
+languages:
+  enabled:
+    - javascript
+    - typescript
+    - python
+  parsers:
+    typescript:
+      strictMode: false
+      includeComments: true
+      tolerateErrors: true
+      plugins:
+        - typescript
+        - jsx
+
+# Feature Configuration
+features:
+  # Security Analysis - Detect vulnerabilities
+  security:
+    enabled: true
+    detectors:
+      - injection      # SQL, NoSQL, Command injection
+      - xss            # Cross-site scripting
+      - crypto         # Weak cryptography
+      - auth           # Authentication issues
+      - secrets        # Hardcoded secrets
+    severityThreshold: medium  # low, medium, high, critical
+  
+  # Code Smell Detection - Find code quality issues
+  codeSmells:
+    enabled: true
+    detectors:
+      - longMethod
+      - largeClass
+      - duplicateCode
+      - longParameterList
+      - deepNesting
+    thresholds:
+      longMethod: 50              # Lines
+      largeClass: 500             # Lines
+      duplicateCode: 10           # Minimum lines
+      longParameterList: 5        # Number of parameters
+      deepNesting: 4              # Nesting levels
+      cyclomaticComplexity: 10    # McCabe complexity
+      cognitiveComplexity: 15     # Cognitive complexity
+  
+  # Architecture Pattern Detection
+  patterns:
+    enabled: true
+    types:
+      - mvc
+      - singleton
+      - factory
+      - observer
+      - repository
+  
+  # API Detection and Analysis
+  api:
+    enabled: true
+    types:
+      - rest
+      - graphql
+    extractDocs: true
+    detectAuth: true
+  
+  # Database Query Analysis
+  database:
+    enabled: true
+    types:
+      - sql
+      - orm
+    detectNPlusOne: true
+    detectMissingIndexes: false
+  
+  # Dependency Analysis
+  dependencies:
+    enabled: true
+    includeExternal: true
+    detectCircular: true
+    detectUnused: true
+    maxDepth: 10
+  
+  # Complexity Metrics
+  complexity:
+    enabled: true
+    metrics:
+      - cyclomatic
+      - cognitive
+      - maintainability-index
+    thresholds:
+      cyclomatic: 10
+      cognitive: 15
+
+# Performance Settings
+performance:
+  parallel: true
+  maxWorkers: 4           # Number of parallel workers (recommended: CPU count)
+  batchSize: 100          # Files per batch
+  caching:
+    enabled: true
+    provider: memory      # memory, file, redis
+    ttl: 3600            # Time to live in seconds (1 hour)
+    maxSize: 100         # Maximum cache size in MB
+  incremental: false     # Enable incremental analysis (experimental)
+  timeout: 30000         # Per-file analysis timeout (ms)
+  memoryLimit: 512       # Memory limit per worker (MB)
+
+# Exclusion Patterns
+exclude:
+  patterns:
+    - '**/node_modules/**'
+    - '**/dist/**'
+    - '**/build/**'
+    - '**/.git/**'
+    - '**/coverage/**'
+    - '**/*.test.ts'
+    - '**/*.test.js'
+    - '**/*.spec.ts'
+    - '**/*.spec.js'
+  directories:
+    - node_modules
+    - dist
+    - build
+    - coverage
+    - .git
+  files: []
+
+# Output Configuration
+output:
+  format: json           # json, yaml, html, markdown
+  directory: ./analysis-results
+  summary: true
+  includeSnippets: false
+  verbosity: normal      # quiet, normal, verbose, debug
+  pretty: true
+
+# Plugin System (experimental)
+plugins:
+  enabled: false
+  directories:
+    - ./plugins
+  plugins: []
+
+
+# ========================================================
+# Common Configuration Scenarios
+# ========================================================
+
+# Scenario 1: Quick Analysis (Fast, basic checks only)
+# ---
+# performance:
+#   parallel: true
+#   maxWorkers: 8
+#   caching:
+#     enabled: true
+# features:
+#   security:
+#     enabled: true
+#     severityThreshold: high
+#   codeSmells:
+#     enabled: false
+#   complexity:
+#     enabled: false
+
+# Scenario 2: Comprehensive Analysis (Slow, all checks)
+# ---
+# performance:
+#   parallel: true
+#   maxWorkers: 4
+# features:
+#   security:
+#     enabled: true
+#     severityThreshold: low
+#   codeSmells:
+#     enabled: true
+#   patterns:
+#     enabled: true
+#   api:
+#     enabled: true
+#   database:
+#     enabled: true
+#   dependencies:
+#     enabled: true
+#   complexity:
+#     enabled: true
+
+# Scenario 3: Security-Focused Analysis
+# ---
+# features:
+#   security:
+#     enabled: true
+#     detectors:
+#       - injection
+#       - xss
+#       - crypto
+#       - auth
+#       - secrets
+#       - cors
+#       - csrf
+#       - deserialization
+#       - path-traversal
+#     severityThreshold: low
+#   codeSmells:
+#     enabled: false
+#   patterns:
+#     enabled: false
+
+# Scenario 4: CI/CD Pipeline (Fast, critical issues only)
+# ---
+# performance:
+#   parallel: true
+#   maxWorkers: 8
+#   timeout: 15000
+# features:
+#   security:
+#     enabled: true
+#     severityThreshold: high
+#   codeSmells:
+#     enabled: true
+#     thresholds:
+#       cyclomaticComplexity: 15
+# output:
+#   format: json
+#   verbosity: quiet
+#   summary: true

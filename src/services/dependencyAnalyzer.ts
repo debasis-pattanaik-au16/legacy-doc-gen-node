@@ -17,16 +17,30 @@ import { UnifiedAST, ImportNode, ComponentNode } from '@/types/ast';
 import { ParserFactory } from '@/services/parsers/ParserFactory';
 import { aiServiceManager } from '@/services/aiServiceManager';
 import { logger } from '@/utils/logger';
+import { AnalysisConfiguration } from '@/types/config';
+import { ConfigLoader } from '@/config/ConfigLoader';
 
 /**
  * Advanced Dependency Analyzer
  * Provides comprehensive dependency analysis, circular dependency detection,
  * and component relationship mapping with AI-powered insights
+ * 
+ * Now supports configuration system for flexible analysis options
  */
 export class DependencyAnalyzer {
   public dependencyCache = new Map<string, UnifiedAST>();
   private externalLibraries = new Map<string, ExternalLibrary>();
   private packageJsonCache = new Map<string, any>();
+  private config: AnalysisConfiguration;
+
+  /**
+   * Constructor - accepts optional configuration
+   * @param config Optional configuration object (uses ConfigLoader if not provided)
+   */
+  constructor(config?: AnalysisConfiguration) {
+    this.config = config || ConfigLoader.getInstance().get();
+    logger.info('DependencyAnalyzer initialized with configuration');
+  }
 
   /**
    * Analyze dependencies for a project or set of files
@@ -449,8 +463,12 @@ export class DependencyAnalyzer {
   }
 
   private shouldExcludeDirectory(dirName: string, options: DependencyAnalysisOptions): boolean {
+    // Merge config exclusions with options
+    const configExcludes = this.config.exclude.directories || [];
     const defaultExcludes = ['node_modules', '.git', 'dist', 'build', '__pycache__'];
-    return defaultExcludes.includes(dirName) || 
+    const allExcludes = [...new Set([...defaultExcludes, ...configExcludes])];
+    
+    return allExcludes.includes(dirName) || 
            options.excludePatterns.some(pattern => dirName.match(pattern));
   }
 
@@ -476,10 +494,31 @@ export class DependencyAnalyzer {
       return false;
     }
     
+    // Check against config exclusion patterns
+    const configPatterns = this.config.exclude.patterns || [];
+    for (const pattern of configPatterns) {
+      if (this.matchPattern(filePath, pattern)) {
+        return false;
+      }
+    }
+    
     if (options.includePatterns.length > 0) {
       return options.includePatterns.some(pattern => filePath.match(pattern));
     }
     return !options.excludePatterns.some(pattern => filePath.match(pattern));
+  }
+
+  /**
+   * Match file path against glob pattern
+   */
+  private matchPattern(filePath: string, pattern: string): boolean {
+    // Simple glob pattern matching
+    const regexPattern = pattern
+      .replace(/\*\*/g, '.*')
+      .replace(/\*/g, '[^/]*')
+      .replace(/\?/g, '.');
+    const regex = new RegExp(regexPattern);
+    return regex.test(filePath);
   }
 
   private calculateNodeLayers(nodes: DependencyGraphNode[]): void {
@@ -681,14 +720,22 @@ export class DependencyAnalyzer {
     return 0.3; // Placeholder
   }
 
+  /**
+   * Get default options merged with configuration
+   * Respects configuration settings while allowing runtime overrides
+   */
   private getDefaultOptions(): DependencyAnalysisOptions {
+    // Use configuration values with fallbacks
+    const depConfig = this.config.features.dependencies;
+    
     return {
-      includeExternal: true,
-      detectCircular: true,
+      includeExternal: depConfig?.includeExternal ?? true,
+      detectCircular: depConfig?.detectCircular ?? true,
       analyzeComponents: true,
       includeDevDependencies: false,
-      maxDepth: 10,
+      maxDepth: depConfig?.maxDepth ?? 10,
       excludePatterns: [
+        ...this.config.exclude.patterns,
         'node_modules', 
         'dist', 
         'build', 
@@ -702,6 +749,26 @@ export class DependencyAnalyzer {
       includePatterns: []
     };
   }
+
+  /**
+   * Update configuration at runtime
+   * @param config New configuration to use
+   */
+  public setConfiguration(config: AnalysisConfiguration): void {
+    this.config = config;
+    logger.info('DependencyAnalyzer configuration updated');
+  }
+
+  /**
+   * Get current configuration
+   */
+  public getConfiguration(): AnalysisConfiguration {
+    return this.config;
+  }
 }
 
+/**
+ * Singleton instance for backward compatibility
+ * Uses default configuration from ConfigLoader
+ */
 export const dependencyAnalyzer = new DependencyAnalyzer();

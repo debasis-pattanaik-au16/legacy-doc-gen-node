@@ -1,0 +1,130 @@
+{
+  "languages": {
+    "enabled": ["javascript", "typescript"],
+    "parsers": {
+      "typescript": {
+        "strictMode": false,
+        "includeComments": true,
+        "tolerateErrors": true,
+        "plugins": ["typescript", "jsx"]
+      },
+      "javascript": {
+        "strictMode": false,
+        "includeComments": true,
+        "tolerateErrors": true,
+        "plugins": ["jsx"]
+      }
+    }
+  },
+  
+  "features": {
+    "security": {
+      "enabled": true,
+      "detectors": ["injection", "xss", "secrets", "auth"],
+      "severityThreshold": "medium"
+    },
+    "codeSmells": {
+      "enabled": true,
+      "detectors": [
+        "longMethod",
+        "largeClass",
+        "duplicateCode",
+        "longParameterList"
+      ],
+      "thresholds": {
+        "longMethod": 50,
+        "largeClass": 300,
+        "duplicateCode": 10,
+        "longParameterList": 5,
+        "cyclomaticComplexity": 10,
+        "cognitiveComplexity": 15
+      }
+    },
+    "patterns": {
+      "enabled": true,
+      "types": ["mvc", "singleton", "factory", "repository"]
+    },
+    "api": {
+      "enabled": true,
+      "types": ["rest"],
+      "extractDocs": true,
+      "detectAuth": true
+    },
+    "database": {
+      "enabled": true,
+      "types": ["sql", "orm"],
+      "detectNPlusOne": true,
+      "detectMissingIndexes": false
+    },
+    "dependencies": {
+      "enabled": true,
+      "includeExternal": true,
+      "detectCircular": true,
+      "detectUnused": false,
+      "maxDepth": 10
+    },
+    "complexity": {
+      "enabled": true,
+      "metrics": ["cyclomatic", "cognitive", "maintainability-index"],
+      "thresholds": {
+        "cyclomatic": 10,
+        "cognitive": 15
+      }
+    }
+  },
+  
+  "performance": {
+    "parallel": true,
+    "maxWorkers": 4,
+    "batchSize": 100,
+    "caching": {
+      "enabled": true,
+      "provider": "memory",
+      "ttl": 3600,
+      "maxSize": 100
+    },
+    "incremental": false,
+    "timeout": 30000,
+    "memoryLimit": 512
+  },
+  
+  "exclude": {
+    "patterns": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.git/**",
+      "**/coverage/**",
+      "**/*.test.ts",
+      "**/*.test.js",
+      "**/*.spec.ts",
+      "**/*.spec.js",
+      "**/*.min.js"
+    ],
+    "directories": [
+      "node_modules",
+      "dist",
+      "build",
+      "coverage",
+      ".git",
+      "uploads",
+      "temp"
+    ],
+    "files": []
+  },
+  
+  "output": {
+    "format": "json",
+    "directory": "./analysis-results",
+    "summary": true,
+    "includeSnippets": false,
+    "verbosity": "normal",
+    "pretty": true
+  },
+  
+  "plugins": {
+    "enabled": false,
+    "directories": [],
+    "plugins": []
+  }
+}

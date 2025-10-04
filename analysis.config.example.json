@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "description": "Analysis Engine Configuration Example - JSON Format",
+  
+  "languages": {
+    "enabled": ["javascript", "typescript", "python"],
+    "parsers": {
+      "javascript": {
+        "strictMode": false,
+        "includeComments": true,
+        "tolerateErrors": true,
+        "plugins": ["jsx"]
+      },
+      "typescript": {
+        "strictMode": false,
+        "includeComments": true,
+        "tolerateErrors": true,
+        "plugins": ["typescript", "jsx"]
+      },
+      "python": {
+        "strictMode": false,
+        "includeComments": true,
+        "tolerateErrors": true
+      }
+    }
+  },
+  
+  "features": {
+    "security": {
+      "enabled": true,
+      "detectors": ["injection", "xss", "crypto", "auth", "secrets", "cors", "csrf"],
+      "severityThreshold": "medium"
+    },
+    "codeSmells": {
+      "enabled": true,
+      "detectors": [
+        "longMethod",
+        "largeClass",
+        "duplicateCode",
+        "longParameterList",
+        "deepNesting",
+        "godClass"
+      ],
+      "thresholds": {
+        "longMethod": 50,
+        "largeClass": 500,
+        "duplicateCode": 10,
+        "longParameterList": 5,
+        "deepNesting": 4,
+        "cyclomaticComplexity": 10,
+        "cognitiveComplexity": 15
+      }
+    },
+    "patterns": {
+      "enabled": true,
+      "types": ["mvc", "singleton", "factory", "observer", "repository", "middleware"]
+    },
+    "api": {
+      "enabled": true,
+      "types": ["rest", "graphql", "websocket"],
+      "extractDocs": true,
+      "detectAuth": true
+    },
+    "database": {
+      "enabled": true,
+      "types": ["sql", "orm"],
+      "detectNPlusOne": true,
+      "detectMissingIndexes": false
+    },
+    "dependencies": {
+      "enabled": true,
+      "includeExternal": true,
+      "detectCircular": true,
+      "detectUnused": true,
+      "maxDepth": 10
+    },
+    "complexity": {
+      "enabled": true,
+      "metrics": ["cyclomatic", "cognitive", "maintainability-index"],
+      "thresholds": {
+        "cyclomatic": 10,
+        "cognitive": 15
+      }
+    }
+  },
+  
+  "performance": {
+    "parallel": true,
+    "maxWorkers": 4,
+    "batchSize": 100,
+    "caching": {
+      "enabled": true,
+      "provider": "memory",
+      "ttl": 3600,
+      "maxSize": 100
+    },
+    "incremental": false,
+    "timeout": 30000,
+    "memoryLimit": 512
+  },
+  
+  "exclude": {
+    "patterns": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.git/**",
+      "**/coverage/**",
+      "**/*.test.ts",
+      "**/*.test.js",
+      "**/*.spec.ts",
+      "**/*.spec.js"
+    ],
+    "directories": ["node_modules", "dist", "build", "coverage", ".git"],
+    "files": []
+  },
+  
+  "output": {
+    "format": "json",
+    "directory": "./analysis-results",
+    "summary": true,
+    "includeSnippets": false,
+    "verbosity": "normal",
+    "pretty": true
+  },
+  
+  "plugins": {
+    "enabled": false,
+    "directories": ["./plugins"],
+    "plugins": []
+  }
+}
