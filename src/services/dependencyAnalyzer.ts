@@ -22,6 +22,8 @@ import { AnalysisConfiguration } from '@/types/config';
 import { ConfigLoader } from '@/config/ConfigLoader';
 import { AnalysisCache } from '@/types/cache';
 import { CacheFactory } from '@/cache/CacheFactory';
+import { SecurityAnalyzer, createDefaultSecurityOptions } from '@/services/security/SecurityAnalyzer';
+import { SecurityAnalysisResult } from '@/types/security';
 
 /**
  * Advanced Dependency Analyzer
@@ -36,6 +38,7 @@ export class DependencyAnalyzer {
   private packageJsonCache = new Map<string, any>();
   private config: AnalysisConfiguration;
   private cache: AnalysisCache;
+  private securityAnalyzer: SecurityAnalyzer | null = null;
 
   /**
    * Constructor - accepts optional configuration
@@ -90,11 +93,17 @@ export class DependencyAnalyzer {
         ? await this.analyzeComponentRelationships(astResults)
         : [];
 
-      // 6. Generate AI-powered insights
+      // 6. Run security analysis if enabled
+      let securityAnalysis: SecurityAnalysisResult | undefined;
+      if (this.config.features.security?.enabled) {
+        securityAnalysis = await this.runSecurityAnalysis(astResults, graph.externalLibraries);
+      }
+
+      // 7. Generate AI-powered insights
       const insights = await this.generateInsights(graph, relationships);
       const recommendations = await this.generateRecommendations(graph, insights);
 
-      // 7. Calculate metrics
+      // 8. Calculate metrics
       const metrics = this.calculateDependencyMetrics(graph);
 
       const analysisTime = Date.now() - startTime;
@@ -105,7 +114,8 @@ export class DependencyAnalyzer {
         relationships,
         insights,
         recommendations,
-        metrics
+        metrics,
+        security: securityAnalysis
       };
 
     } catch (error: any) {
@@ -1193,6 +1203,81 @@ export class DependencyAnalyzer {
   private calculateAbstractnessIndex(graph: DependencyGraph): number {
     // Simplified abstractness calculation
     return 0.3; // Placeholder
+  }
+
+  /**
+   * Run security analysis on parsed files and dependencies
+   * @private
+   */
+  private async runSecurityAnalysis(
+    astResults: Map<string, UnifiedAST>,
+    externalLibraries: ExternalLibrary[]
+  ): Promise<SecurityAnalysisResult> {
+    try {
+      logger.info('Starting security analysis...');
+
+      // Initialize security analyzer if not already done
+      if (!this.securityAnalyzer) {
+        this.securityAnalyzer = new SecurityAnalyzer();
+      }
+
+      // Get security options from config or use defaults
+      const securityOptions = this.config.features.security?.detectors
+        ? {
+            ...createDefaultSecurityOptions(),
+            enabledDetectors: this.config.features.security.detectors || [
+              'injection',
+              'cryptography',
+              'authentication',
+              'dependencies'
+            ],
+            severityThreshold: this.config.features.security.severityThreshold || 'low'
+          }
+        : createDefaultSecurityOptions();
+
+      // Run security analysis
+      const result = await this.securityAnalyzer.analyze(
+        astResults,
+        externalLibraries,
+        securityOptions as any
+      );
+
+      logger.info(
+        `Security analysis complete. Found ${result.issues.length} issues ` +
+        `(Critical: ${result.summary.issuesBySeverity.critical}, ` +
+        `High: ${result.summary.issuesBySeverity.high})`
+      );
+
+      return result;
+    } catch (error: any) {
+      logger.error(`Security analysis failed: ${error.message}`);
+      // Return empty result on error rather than failing the entire analysis
+      return {
+        issues: [],
+        summary: {
+          totalIssues: 0,
+          issuesBySeverity: {
+            critical: 0,
+            high: 0,
+            medium: 0,
+            low: 0,
+            info: 0
+          },
+          issuesByCategory: {} as any,
+          issuesByType: {} as any,
+          criticalRiskScore: 0,
+          mostCommonCategory: 'injection' as any,
+          totalFilesScanned: astResults.size,
+          filesWithIssues: 0,
+          detectionTime: 0,
+          confidenceScore: 0
+        },
+        recommendations: [],
+        analysisDate: new Date(),
+        analysisVersion: '1.0.0',
+        configUsed: createDefaultSecurityOptions() as any
+      };
+    }
   }
 
   /**
