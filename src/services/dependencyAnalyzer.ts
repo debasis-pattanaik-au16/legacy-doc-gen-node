@@ -24,6 +24,9 @@ import { AnalysisCache } from '@/types/cache';
 import { CacheFactory } from '@/cache/CacheFactory';
 import { SecurityAnalyzer, createDefaultSecurityOptions } from '@/services/security/SecurityAnalyzer';
 import { SecurityAnalysisResult } from '@/types/security';
+import { CodeSmellDetector } from '@/services/codeSmells/CodeSmellDetector';
+import { CodeSmellAnalysisResult } from '@/types/codeSmell';
+import { CouplingMetricsCalculator } from '@/services/metrics/CouplingMetricsCalculator';
 
 /**
  * Advanced Dependency Analyzer
@@ -39,6 +42,8 @@ export class DependencyAnalyzer {
   private config: AnalysisConfiguration;
   private cache: AnalysisCache;
   private securityAnalyzer: SecurityAnalyzer | null = null;
+  private codeSmellDetector: CodeSmellDetector | null = null;
+  private couplingCalculator: CouplingMetricsCalculator;
 
   /**
    * Constructor - accepts optional configuration
@@ -57,6 +62,9 @@ export class DependencyAnalyzer {
       this.cache = this.createNoOpCache();
       logger.info('DependencyAnalyzer initialized with caching disabled');
     }
+    
+    // Initialize coupling metrics calculator
+    this.couplingCalculator = new CouplingMetricsCalculator();
   }
 
   /**
@@ -99,6 +107,12 @@ export class DependencyAnalyzer {
         securityAnalysis = await this.runSecurityAnalysis(astResults, graph.externalLibraries);
       }
 
+      // 6.5. Run code smell detection if enabled
+      let codeSmellAnalysis: CodeSmellAnalysisResult | undefined;
+      if (this.config.features.codeSmells?.enabled) {
+        codeSmellAnalysis = await this.runCodeSmellAnalysis(astResults);
+      }
+
       // 7. Generate AI-powered insights
       const insights = await this.generateInsights(graph, relationships);
       const recommendations = await this.generateRecommendations(graph, insights);
@@ -115,7 +129,8 @@ export class DependencyAnalyzer {
         insights,
         recommendations,
         metrics,
-        security: securityAnalysis
+        security: securityAnalysis,
+        codeSmells: codeSmellAnalysis
       };
 
     } catch (error: any) {
@@ -1186,23 +1201,117 @@ export class DependencyAnalyzer {
   }
 
   private calculateCouplingIndex(graph: DependencyGraph): number {
-    // Simplified coupling calculation
-    return Math.min(1.0, graph.edges.length / (graph.nodes.length * graph.nodes.length));
+    try {
+      // Build dependency map from graph
+      const dependencyMap = new Map<string, string[]>();
+      graph.nodes.forEach(node => {
+        dependencyMap.set(node.id, node.dependencies);
+      });
+
+      // Calculate average coupling across all nodes
+      let totalCoupling = 0;
+      let nodeCount = 0;
+
+      graph.nodes.forEach(node => {
+        const coupling = this.couplingCalculator.calculateCoupling(
+          node.id,
+          dependencyMap
+        );
+        totalCoupling += coupling.instability || 0;
+        nodeCount++;
+      });
+
+      return nodeCount > 0 ? totalCoupling / nodeCount : 0;
+    } catch (error) {
+      logger.warn('Failed to calculate coupling index:', error);
+      return Math.min(1.0, graph.edges.length / (graph.nodes.length * graph.nodes.length));
+    }
   }
 
   private calculateCohesionIndex(graph: DependencyGraph): number {
-    // Simplified cohesion calculation
-    return 0.8; // Placeholder
+    try {
+      // Calculate average cohesion across all components with classes
+      let totalCohesion = 0;
+      let classCount = 0;
+
+      // Iterate through cached AST results to access class information
+      this.dependencyCache.forEach(ast => {
+        ast.components.forEach(component => {
+          if (component.type === 'class') {
+            // Type cast to ClassNode to access methods and properties
+            const classNode = component as any; // ClassNode type
+            
+            if (classNode.methods && classNode.methods.length > 1) {
+              const cohesion = this.couplingCalculator.calculateCohesion(classNode);
+              
+              // LCOM4 is inverted (higher is better), normalize to 0-1 range
+              const normalizedCohesion = cohesion.lcom4 > 0 ? 1 / cohesion.lcom4 : 1;
+              totalCohesion += normalizedCohesion;
+              classCount++;
+            }
+          }
+        });
+      });
+
+      return classCount > 0 ? totalCohesion / classCount : 0.8;
+    } catch (error) {
+      logger.warn('Failed to calculate cohesion index:', error);
+      return 0.8; // Default fallback
+    }
   }
 
   private calculateInstabilityIndex(graph: DependencyGraph): number {
-    // Simplified instability calculation
-    return 0.5; // Placeholder
+    try {
+      // Build dependency map from graph
+      const dependencyMap = new Map<string, string[]>();
+      graph.nodes.forEach(node => {
+        dependencyMap.set(node.id, node.dependencies);
+      });
+
+      // Calculate average instability across all nodes
+      let totalInstability = 0;
+      let nodeCount = 0;
+
+      graph.nodes.forEach(node => {
+        const coupling = this.couplingCalculator.calculateCoupling(
+          node.id,
+          dependencyMap
+        );
+        totalInstability += coupling.instability || 0;
+        nodeCount++;
+      });
+
+      return nodeCount > 0 ? totalInstability / nodeCount : 0.5;
+    } catch (error) {
+      logger.warn('Failed to calculate instability index:', error);
+      return 0.5; // Default fallback
+    }
   }
 
   private calculateAbstractnessIndex(graph: DependencyGraph): number {
-    // Simplified abstractness calculation
-    return 0.3; // Placeholder
+    try {
+      // Calculate abstractness based on abstract classes and interfaces
+      let abstractCount = 0;
+      let totalCount = 0;
+
+      this.dependencyCache.forEach(ast => {
+        ast.components.forEach(component => {
+          if (component.type === 'class' || component.type === 'interface') {
+            totalCount++;
+            // Check if class is abstract or is an interface
+            const classNode = component as any; // ClassNode type
+            if (component.type === 'interface' || classNode.isAbstract) {
+              abstractCount++;
+            }
+          }
+        });
+      });
+
+      return totalCount > 0 ? abstractCount / totalCount : 0.3;
+    } catch (error) {
+      logger.warn('Failed to calculate abstractness index:', error);
+      return 0.3; // Default fallback
+    }
   }
 
   /**
@@ -1276,6 +1385,95 @@ export class DependencyAnalyzer {
         analysisDate: new Date(),
         analysisVersion: '1.0.0',
         configUsed: createDefaultSecurityOptions() as any
+      };
+    }
+  }
+
+  /**
+   * Run code smell detection analysis on parsed files
+   * @private
+   */
+  private async runCodeSmellAnalysis(
+    astResults: Map<string, UnifiedAST>
+  ): Promise<CodeSmellAnalysisResult> {
+    try {
+      logger.info('Starting code smell detection...');
+
+      // Initialize code smell detector if not already done
+      if (!this.codeSmellDetector) {
+        const detectorConfig = this.config.features.codeSmells;
+        
+        // Map config thresholds to detector thresholds (with defaults from DEFAULT_CODE_SMELL_THRESHOLDS)
+        const thresholds = {
+          longMethod: detectorConfig?.thresholds?.longMethod || 50,
+          largeClass: detectorConfig?.thresholds?.largeClass || 500,
+          longParameterList: detectorConfig?.thresholds?.longParameterList || 5,
+          dataClumps: 3,
+          cyclomaticComplexity: detectorConfig?.thresholds?.cyclomaticComplexity || 10,
+          cognitiveComplexity: detectorConfig?.thresholds?.cognitiveComplexity || 15,
+          nestingDepth: detectorConfig?.thresholds?.deepNesting || 4,
+          duplicateCodeMinLines: detectorConfig?.thresholds?.duplicateCode || 6,
+          duplicateSimilarityThreshold: 0.85,
+          maxCouplingBetweenObjects: 10,
+          maxAfferentCoupling: 5,
+          maxEfferentCoupling: 5,
+          maxLackOfCohesion: 80,
+          magicNumberExclusions: [0, 1, -1, 2, 10, 100, 1000],
+          deadCodeDays: 90,
+        };
+        
+        this.codeSmellDetector = new CodeSmellDetector({
+          detectors: {
+            bloaters: detectorConfig?.detectors?.includes('longMethod') || 
+                     detectorConfig?.detectors?.includes('largeClass') || 
+                     detectorConfig?.detectors?.includes('longParameterList') || false,
+            oopAbusers: detectorConfig?.detectors?.includes('godClass') || 
+                       detectorConfig?.detectors?.includes('dataClass') || false,
+            changePreventers: false,
+            dispensables: detectorConfig?.detectors?.includes('duplicateCode') || false,
+            couplers: false,
+          },
+          thresholds,
+          minimumSeverity: undefined,
+        });
+      }
+
+      // Convert Map to array of ASTs
+      const astArray = Array.from(astResults.values());
+
+      // Run code smell analysis
+      const result = await this.codeSmellDetector.analyze(astArray);
+
+      logger.info(
+        `Code smell detection complete. Found ${result.smells.length} smells ` +
+        `(Critical: ${result.summary.bySeverity.critical || 0}, ` +
+        `High: ${result.summary.bySeverity.high || 0})`
+      );
+
+      return result;
+    } catch (error: any) {
+      logger.error(`Code smell detection failed: ${error.message}`);
+      // Return empty result on error rather than failing the entire analysis
+      return {
+        smells: [],
+        summary: {
+          totalSmells: 0,
+          byCategory: {} as any,
+          byType: {} as any,
+          bySeverity: {
+            low: 0,
+            medium: 0,
+            high: 0,
+            critical: 0,
+          },
+          totalAffectedFiles: 0,
+          totalAffectedLines: 0,
+          estimatedRefactoringEffort: 'low' as any,
+          prioritizedSmells: [],
+          technicalDebtHours: 0,
+        },
+        recommendations: [],
+        executionTime: 0,
       };
     }
   }

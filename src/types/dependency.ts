@@ -178,6 +178,7 @@ export interface DependencyAnalysisResult {
   recommendations: Recommendation[];
   metrics: DependencyMetrics;
   security?: any; // SecurityAnalysisResult from @/types/security
+  codeSmells?: any; // CodeSmellAnalysisResult from @/types/codeSmell
 }
 
 export interface AnalysisInsight {
