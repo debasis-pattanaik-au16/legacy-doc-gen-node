@@ -53,7 +53,7 @@ export class HalsteadCalculator {
 
   /**
    * Calculate Halstead metrics for a given AST
-   * @param ast Babel AST
+   * @param ast Babel AST (should be Program/File or will be wrapped)
    * @returns HalsteadMetrics object
    */
   public calculate(ast: any): HalsteadMetrics {
@@ -64,8 +64,34 @@ export class HalsteadCalculator {
     this.operandCount = 0;
 
     try {
+      // Check if this is a Program or File node (can traverse directly)
+      let astToTraverse = ast;
+      if (!t.isProgram(ast) && !t.isFile(ast)) {
+        // Special handling for class methods - wrap as a class
+        if (t.isClassMethod(ast)) {
+          // Create a dummy class to hold the method
+          const dummyClass = t.classDeclaration(
+            t.identifier('TempClass'),
+            null,
+            t.classBody([ast]),
+            []
+          );
+          astToTraverse = t.file(t.program([dummyClass]), [], []);
+        } else if (t.isStatement(ast)) {
+          // For statements, add directly to program
+          astToTraverse = t.file(t.program([ast]), [], []);
+        } else {
+          // For expressions, wrap in expression statement
+          astToTraverse = t.file(
+            t.program([t.expressionStatement(ast)]),
+            [],
+            []
+          );
+        }
+      }
+
       // Traverse AST and collect operators/operands
-      traverse(ast, {
+      traverse(astToTraverse, {
         enter: (path) => {
           this.processNode(path.node);
         }

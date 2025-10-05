@@ -32,9 +32,17 @@ export class JavaScriptParser implements LanguageParser {
   public readonly version = '1.0.0';
   
   private typeResolver: TypeScriptTypeResolver;
+  private halsteadCalculator: any; // HalsteadCalculator
+  private cognitiveCalculator: any; // CognitiveComplexityCalculator
+  private currentFullAST: any = null; // Store full AST for metrics calculation
   
   constructor() {
     this.typeResolver = new TypeScriptTypeResolver();
+    // Import calculators dynamically to avoid circular dependencies
+    const { HalsteadCalculator } = require('@/services/metrics/HalsteadCalculator');
+    const { CognitiveComplexityCalculator } = require('@/services/metrics/CognitiveComplexityCalculator');
+    this.halsteadCalculator = new HalsteadCalculator();
+    this.cognitiveCalculator = new CognitiveComplexityCalculator();
   }
 
   /**
@@ -65,8 +73,14 @@ export class JavaScriptParser implements LanguageParser {
       // Parse the source code
       const ast = parse(sourceCode, parserOptions);
       
+      // Store full AST for metrics calculation
+      this.currentFullAST = ast;
+      
       // Extract components, imports, and exports
       const components = this.extractComponents(ast, sourceCode);
+      
+      // Clear full AST after extraction
+      this.currentFullAST = null;
       const imports = this.extractImports(ast);
       const exports = this.extractExports(ast);
       const dependencies = this.extractDependencies(imports);
@@ -180,7 +194,17 @@ export class JavaScriptParser implements LanguageParser {
         ClassDeclaration: (path: NodePath<t.ClassDeclaration>) => {
           try {
             const node = this.createClassNode(path, sourceLines);
-            if (node) components.push(node);
+            if (node) {
+              components.push(node);
+              // Also add methods/constructors as separate components
+              const classNode = node as ClassNode;
+              if (classNode.methods) {
+                classNode.methods.forEach(method => components.push(method));
+              }
+              if (classNode.constructors) {
+                classNode.constructors.forEach(constructor => components.push(constructor));
+              }
+            }
           } catch (err) {
             logger.debug(`Failed to process class declaration: ${err}`);
           }
@@ -379,27 +403,34 @@ export class JavaScriptParser implements LanguageParser {
 
   /**
    * Calculate complexity metrics for a component
-   * Now uses comprehensive metrics calculators
+   * Now uses comprehensive metrics calculators with full AST context
    */
-  public calculateComplexity(node: ComponentNode): ComplexityMetrics {
-    // Import calculators dynamically to avoid circular dependencies
-    const { HalsteadCalculator } = require('@/services/metrics/HalsteadCalculator');
-    const { CognitiveComplexityCalculator } = require('@/services/metrics/CognitiveComplexityCalculator');
-    
+  public calculateComplexity(node: ComponentNode, astNode?: any): ComplexityMetrics {
     const linesOfCode = (node.endLine - node.startLine) + 1;
     const cyclomaticComplexity = this.calculateCyclomaticComplexity(node);
     
-    // Calculate cognitive complexity using new calculator
+    // Calculate cognitive complexity using full AST
     let cognitiveComplexity = 1;
     try {
-      const cogCalc = new CognitiveComplexityCalculator();
-      // We would need the AST node here - for now use basic calculation
+      if (this.currentFullAST && this.cognitiveCalculator) {
+        // Use the full AST with component name for proper traversal
+        cognitiveComplexity = this.cognitiveCalculator.calculateForComponent(
+          node,
+          this.currentFullAST
+        );
+      } else if (astNode && this.cognitiveCalculator) {
+        // Fallback: try with the provided node (may fail with scope errors)
+        cognitiveComplexity = this.cognitiveCalculator.calculate(astNode, node.name);
+      } else {
+        // Final fallback to estimation
+        cognitiveComplexity = this.calculateCognitiveComplexity(node);
+      }
+    } catch (error: any) {
+      logger.debug(`Failed to calculate cognitive complexity for ${node.name}: ${error.message}`);
       cognitiveComplexity = this.calculateCognitiveComplexity(node);
-    } catch (error) {
-      cognitiveComplexity = 1;
     }
     
-    // Calculate Halstead metrics
+    // Calculate Halstead metrics using the specific component's AST node
     let halsteadMetrics = {
       vocabulary: 0,
       length: 0,
@@ -411,14 +442,50 @@ export class JavaScriptParser implements LanguageParser {
       numberOfDeliveredBugs: 0
     };
     
-    // Note: Full Halstead calculation requires access to the component's AST subtree
-    // This would be done during the main parse() method
+    try {
+      // Try to calculate Halstead for this specific component
+      if (astNode && this.halsteadCalculator) {
+        // Use the provided AST node (function/method specific)
+        const fullMetrics = this.halsteadCalculator.calculate(astNode);
+        halsteadMetrics = {
+          vocabulary: fullMetrics.vocabulary,
+          length: fullMetrics.length,
+          calculatedLength: fullMetrics.calculatedLength,
+          volume: fullMetrics.volume,
+          difficulty: fullMetrics.difficulty,
+          effort: fullMetrics.effort,
+          timeRequiredToProgram: fullMetrics.timeRequiredToProgram,
+          numberOfDeliveredBugs: fullMetrics.numberOfDeliveredBugs
+        };
+      } else if (this.currentFullAST && this.halsteadCalculator && node.name) {
+        // Fallback: Find this component in the full AST and calculate
+        // This is less accurate but better than file-level metrics
+        const fullMetrics = this.halsteadCalculator.calculate(this.currentFullAST);
+        halsteadMetrics = {
+          vocabulary: fullMetrics.vocabulary,
+          length: fullMetrics.length,
+          calculatedLength: fullMetrics.calculatedLength,
+          volume: fullMetrics.volume,
+          difficulty: fullMetrics.difficulty,
+          effort: fullMetrics.effort,
+          timeRequiredToProgram: fullMetrics.timeRequiredToProgram,
+          numberOfDeliveredBugs: fullMetrics.numberOfDeliveredBugs
+        };
+      }
+    } catch (error: any) {
+      logger.debug(`Failed to calculate Halstead metrics for ${node.name}: ${error.message}`);
+    }
+    
+    // Calculate maintainability index using Halstead volume if available
+    const maintainabilityIndex = halsteadMetrics.volume > 0
+      ? this.calculateMaintainabilityIndexWithHalstead(halsteadMetrics.volume, cyclomaticComplexity, linesOfCode)
+      : this.calculateMaintainabilityIndex(cyclomaticComplexity, linesOfCode);
     
     return {
       cyclomaticComplexity,
       cognitiveComplexity,
       linesOfCode,
-      maintainabilityIndex: this.calculateMaintainabilityIndex(cyclomaticComplexity, linesOfCode),
+      maintainabilityIndex,
       halsteadMetrics
     };
   }
@@ -469,18 +536,33 @@ export class JavaScriptParser implements LanguageParser {
     const parameters = this.extractParameters(node.params);
     const returnType = this.extractReturnType(node);
     
-    return {
+    // Create a minimal component node for complexity calculation
+    const componentNode = {
       id: `func_${functionName}_${node.loc.start.line}`,
       name: functionName,
       type: 'function',
       startLine: node.loc.start.line,
       endLine: node.loc.end.line,
       visibility: 'public',
+      isExported: false,
+      decorators: [],
+      annotations: [],
+      children: [],
+      complexity: {} as ComplexityMetrics
+    } as ComponentNode;
+    
+    return {
+      id: componentNode.id,
+      name: componentNode.name,
+      type: 'function',
+      startLine: componentNode.startLine,
+      endLine: componentNode.endLine,
+      visibility: 'public',
       isExported: this.isNodeExported(path),
       decorators: this.extractDecorators(node),
       annotations: [],
       children: [],
-      complexity: this.calculateComplexity({} as ComponentNode),
+      complexity: this.calculateComplexity(componentNode, node),
       parameters,
       returnType,
       isAsync: node.async || false,
@@ -501,7 +583,7 @@ export class JavaScriptParser implements LanguageParser {
 
     // Extract class members
     node.body.body.forEach(member => {
-      if (t.isClassMethod(member) && (member as any).kind === 'constructor') {
+      if (t.isClassMethod(member)) {
         if (member.kind === 'constructor') {
           const constructor = this.createMethodNode(member, sourceLines, 'constructor');
           if (constructor) constructors.push(constructor);
@@ -628,7 +710,8 @@ export class JavaScriptParser implements LanguageParser {
     const name = type === 'constructor' ? 'constructor' : 
       (t.isIdentifier(member.key) ? member.key.name : '<anonymous>');
 
-    return {
+    // Create a minimal component node for complexity calculation
+    const componentNode = {
       id: `${type}_${name}_${member.loc.start.line}`,
       name,
       type,
@@ -636,10 +719,24 @@ export class JavaScriptParser implements LanguageParser {
       endLine: member.loc.end.line,
       visibility: this.getMethodVisibility(member),
       isExported: false,
+      decorators: [],
+      annotations: [],
+      children: [],
+      complexity: {} as ComplexityMetrics
+    } as ComponentNode;
+
+    return {
+      id: componentNode.id,
+      name: componentNode.name,
+      type,
+      startLine: componentNode.startLine,
+      endLine: componentNode.endLine,
+      visibility: this.getMethodVisibility(member),
+      isExported: false,
       decorators: this.extractDecorators(member),
       annotations: [],
       children: [],
-      complexity: this.calculateComplexity({} as ComponentNode),
+      complexity: this.calculateComplexity(componentNode, member),
       parameters: this.extractParameters(member.params || []),
       returnType: this.extractReturnType(member),
       isAsync: member.async || false,
@@ -809,8 +906,28 @@ export class JavaScriptParser implements LanguageParser {
   }
 
   private calculateMaintainabilityIndex(complexity: number, linesOfCode: number): number {
-    // Simplified maintainability index
+    // Simplified maintainability index (when Halstead not available)
     return Math.max(0, 171 - 5.2 * Math.log(linesOfCode) - 0.23 * complexity);
+  }
+  
+  /**
+   * Calculate maintainability index with Halstead metrics
+   * Formula: MI = max(0, (171 - 5.2 * ln(HV) - 0.23 * CC - 16.2 * ln(LOC)) * 100 / 171)
+   * where HV = Halstead Volume, CC = Cyclomatic Complexity, LOC = Lines of Code
+   * Normalized to 0-100 scale where 100 is most maintainable
+   */
+  private calculateMaintainabilityIndexWithHalstead(volume: number, complexity: number, linesOfCode: number): number {
+    const safeVolume = Math.max(volume, 1);
+    const safeLoC = Math.max(linesOfCode, 1);
+    const safeComplexity = Math.max(complexity, 1);
+    
+    // Calculate raw MI
+    const rawMI = 171 - 5.2 * Math.log(safeVolume) - 0.23 * safeComplexity - 16.2 * Math.log(safeLoC);
+    
+    // Normalize to 0-100 scale (171 is the theoretical maximum)
+    const normalizedMI = (rawMI * 100) / 171;
+    
+    return Math.max(0, Math.min(100, normalizedMI));
   }
 
   // Placeholder implementations for TypeScript-specific methods

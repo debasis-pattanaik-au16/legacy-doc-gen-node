@@ -35,7 +35,7 @@ export class CognitiveComplexityCalculator {
 
   /**
    * Calculate cognitive complexity for a component
-   * @param ast Babel AST (can be the full AST or a subtree)
+   * @param ast Babel AST (must be a Program/File node or full AST)
    * @param componentName Optional component name for recursion detection
    * @returns Cognitive complexity score
    */
@@ -47,11 +47,26 @@ export class CognitiveComplexityCalculator {
     this.functionCalls = new Set();
 
     try {
-      traverse(ast, {
-        enter: (path) => {
-          this.processNode(path);
-        }
-      });
+      // Check if this is a Program or File node (can traverse directly)
+      if (t.isProgram(ast) || t.isFile(ast)) {
+        traverse(ast, {
+          enter: (path) => {
+            this.processNode(path);
+          }
+        });
+      } else {
+        // For other nodes, wrap in a file structure to enable traversal
+        const wrappedAst = t.file(
+          t.program([t.expressionStatement(ast)]),
+          [],
+          []
+        );
+        traverse(wrappedAst, {
+          enter: (path) => {
+            this.processNode(path);
+          }
+        });
+      }
 
       // Check for recursion
       if (this.currentFunctionName && this.functionCalls.has(this.currentFunctionName)) {
@@ -161,6 +176,7 @@ export class CognitiveComplexityCalculator {
 
   /**
    * Traverse body with current nesting level
+   * This method is only called during the initial full-AST traversal
    */
   private traverseBody(path: any): void {
     const node = path.node;
@@ -170,48 +186,27 @@ export class CognitiveComplexityCalculator {
       if (node.consequent) {
         path.traverse({
           enter: (childPath: any) => this.processNode(childPath)
-        }, path.scope, path.state);
+        });
       }
 
       // Handle alternate (else/else if)
       if (node.alternate) {
         // else if doesn't increase nesting
         if (t.isIfStatement(node.alternate)) {
-          this.processNode({ node: node.alternate, parent: node });
+          // Create a pseudo-path for the else-if
+          this.processNode({ node: node.alternate, parent: node, skip: () => {}, traverse: () => {} });
         } else {
           // Regular else block increases nesting
           this.nestingLevel++;
           path.traverse({
             enter: (childPath: any) => this.processNode(childPath)
-          }, path.scope, path.state);
+          });
           this.nestingLevel--;
         }
       }
-    } else if (t.isSwitchStatement(node)) {
-      // Switch cases don't individually increase nesting
-      node.cases.forEach((caseNode: any) => {
-        caseNode.consequent.forEach((stmt: any) => {
-          traverse(stmt, {
-            enter: (childPath) => this.processNode(childPath)
-          });
-        });
-      });
     } else {
-      // Default body traversal
-      const body = (node as any).body;
-      if (body) {
-        if (Array.isArray(body)) {
-          body.forEach((stmt: any) => {
-            traverse(stmt, {
-              enter: (childPath) => this.processNode(childPath)
-            });
-          });
-        } else {
-          traverse(body, {
-            enter: (childPath) => this.processNode(childPath)
-          });
-        }
-      }
+      // For all other cases, just continue the traversal
+      // path.traverse will handle nested structures properly
     }
   }
 
@@ -242,54 +237,82 @@ export class CognitiveComplexityCalculator {
 
   /**
    * Calculate cognitive complexity for a component node
-   * This is a convenience method that extracts the component's AST
+   * This method traverses the full AST and calculates complexity for the specified component
    */
   public calculateForComponent(component: ComponentNode, fullAst: any): number {
-    // Find the component in the full AST
-    let componentAst: any = null;
+    // Reset state
+    this.complexity = 0;
+    this.nestingLevel = 0;
+    this.currentFunctionName = component.name;
+    this.functionCalls = new Set();
+
     const componentName = component.name;
+    let insideComponent = false;
+    let componentDepth = 0;
 
-    traverse(fullAst, {
-      FunctionDeclaration: (path) => {
-        if (path.node.id?.name === componentName) {
-          componentAst = path.node;
-          path.stop();
-        }
-      },
-      FunctionExpression: (path) => {
-        // Check if this is assigned to a variable with the component name
-        const parent = path.parent;
-        if (t.isVariableDeclarator(parent) && t.isIdentifier(parent.id)) {
-          if (parent.id.name === componentName) {
-            componentAst = path.node;
-            path.stop();
+    try {
+      traverse(fullAst, {
+        enter: (path) => {
+          // Check if we're entering the target component
+          if (!insideComponent) {
+            // Function Declarations
+            if (t.isFunctionDeclaration(path.node) && path.node.id?.name === componentName) {
+              insideComponent = true;
+              componentDepth = 1;
+              // Don't process the function declaration itself
+              return;
+            }
+            
+            // Function Expressions assigned to variables
+            if (t.isVariableDeclarator(path.node) &&
+                t.isIdentifier(path.node.id) &&
+                path.node.id.name === componentName &&
+                (t.isFunctionExpression(path.node.init) || t.isArrowFunctionExpression(path.node.init))) {
+              insideComponent = true;
+              componentDepth = 1;
+              return;
+            }
+            
+            // Class Methods
+            if (t.isClassMethod(path.node) &&
+                t.isIdentifier(path.node.key) &&
+                path.node.key.name === componentName) {
+              insideComponent = true;
+              componentDepth = 1;
+              return;
+            }
+          } else {
+            // We're inside the target component
+            componentDepth++;
+            this.processNode(path);
+          }
+        },
+        exit: (path) => {
+          // Track when we exit the component
+          if (insideComponent) {
+            componentDepth--;
+            if (componentDepth === 0) {
+              // Exited the component
+              path.stop();
+            }
           }
         }
-      },
-      ClassMethod: (path) => {
-        if (t.isIdentifier(path.node.key) && path.node.key.name === componentName) {
-          componentAst = path.node;
-          path.stop();
-        }
-      },
-      ArrowFunctionExpression: (path) => {
-        // Check if assigned to variable with component name
-        const parent = path.parent;
-        if (t.isVariableDeclarator(parent) && t.isIdentifier(parent.id)) {
-          if (parent.id.name === componentName) {
-            componentAst = path.node;
-            path.stop();
-          }
-        }
+      });
+
+      // Check for recursion
+      if (this.currentFunctionName && this.functionCalls.has(this.currentFunctionName)) {
+        this.complexity += 1;
       }
-    });
 
-    if (componentAst) {
-      return this.calculate(componentAst, componentName);
+      if (!insideComponent) {
+        logger.warn(`Could not find component ${componentName} in AST`);
+      }
+
+      return this.complexity;
+    } catch (error: any) {
+      logger.error(`Error calculating cognitive complexity for ${componentName}: ${error.message}`);
+      return 0;
     }
-
-    logger.warn(`Could not find component ${componentName} in AST`);
-    return 0;
   }
 }
 
