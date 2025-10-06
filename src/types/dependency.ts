@@ -179,6 +179,8 @@ export interface DependencyAnalysisResult {
   metrics: DependencyMetrics;
   security?: any; // SecurityAnalysisResult from @/types/security
   codeSmells?: any; // CodeSmellAnalysisResult from @/types/codeSmell
+  api?: any; // APIAnalysisResult from @/types/api
+  database?: any; // DatabaseSchemaAnalysis from @/types/database
 }
 
 export interface AnalysisInsight {

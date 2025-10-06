@@ -63,6 +63,7 @@
     "openai": "^4.20.1",
     "sharp": "^0.34.4",
     "ts-morph": "^27.0.0",
+    "uuid": "^13.0.0",
     "yauzl": "^2.10.0"
   },
   "devDependencies": {

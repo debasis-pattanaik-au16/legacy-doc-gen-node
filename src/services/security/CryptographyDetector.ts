@@ -175,19 +175,54 @@ export class CryptographyDetector implements SecurityDetector {
         }
       }
 
-      // Check for weak ciphers
-      for (const cipher of WEAK_CRYPTO.weakCiphers) {
-        const cipherRegex = new RegExp(`\\b${cipher}\\b`, 'gi');
-        if (cipherRegex.test(code)) {
+      // Check for weak ciphers with more specific patterns to avoid false positives
+      // Don't flag 'des' if it's part of 'aes', 'des' -> 'DES', etc.
+      const weakCipherPatterns = {
+        'des': /\b(?:DES|des)\b(?!ktop|cription|cribe|igner|ign|ktop)/,  // Not desktop, description, etc.
+        '3des': /\b3?-?des\b/i,
+        'rc4': /\brc4\b/i,
+        'rc2': /\brc2\b/i,
+        'blowfish': /\bblowfish\b/i
+      };
+
+      for (const [cipher, pattern] of Object.entries(weakCipherPatterns)) {
+        if (pattern.test(code)) {
+          // Additional check: make sure it's not part of a strong cipher like 'aes-256-gcm'
+          const contextMatch = code.match(new RegExp(`.{0,10}${pattern.source}.{0,10}`, 'i'));
+          if (contextMatch && !/aes|strong|secure/i.test(contextMatch[0])) {
+            issues.push(this.createIssue({
+              type: VulnerabilityType.WEAK_CRYPTO_ALGORITHM,
+              severity: SecuritySeverity.CRITICAL,
+              title: `Weak Encryption Algorithm: ${cipher.toUpperCase()}`,
+              description: `Detected use of weak encryption algorithm ${cipher.toUpperCase()} in ${component.name}. Use modern algorithms like AES-256-GCM instead.`,
+              location: this.createLocation(component, context),
+              fixComplexity: 'medium',
+              recommendations: this.getWeakCipherRecommendations(cipher),
+              confidence: 90,
+              cwe: [{
+                id: 'CWE-327',
+                name: 'Use of a Broken or Risky Cryptographic Algorithm',
+                url: 'https://cwe.mitre.org/data/definitions/327.html'
+              }]
+            }));
+            break; // Only report once per component
+          }
+        }
+      }
+
+      // Check for ECB mode - but not as part of other words
+      if (/\b(?:ECB|ecb)\b(?!ook|ase)/i.test(code)) {
+        // Make sure it's actually ECB mode (with cipher context)
+        if (/(?:ecb|ECB|cipher|crypto|encrypt)/i.test(code)) {
           issues.push(this.createIssue({
             type: VulnerabilityType.WEAK_CRYPTO_ALGORITHM,
-            severity: SecuritySeverity.CRITICAL,
-            title: `Weak Encryption Algorithm: ${cipher.toUpperCase()}`,
-            description: `Detected use of weak encryption algorithm ${cipher.toUpperCase()} in ${component.name}. Use modern algorithms like AES-256-GCM instead.`,
+            severity: SecuritySeverity.HIGH,
+            title: 'Insecure Cipher Mode: ECB',
+            description: `Detected use of ECB mode in ${component.name}. ECB mode is insecure because it does not provide semantic security. Use CBC, GCM, or CTR mode instead.`,
             location: this.createLocation(component, context),
-            fixComplexity: 'medium',
-            recommendations: this.getWeakCipherRecommendations(cipher),
-            confidence: 90,
+            fixComplexity: 'low',
+            recommendations: this.getECBModeRecommendations(),
+            confidence: 95,
             cwe: [{
               id: 'CWE-327',
               name: 'Use of a Broken or Risky Cryptographic Algorithm',
@@ -195,25 +230,6 @@ export class CryptographyDetector implements SecurityDetector {
             }]
           }));
         }
-      }
-
-      // Check for ECB mode
-      if (/\bECB\b/i.test(code)) {
-        issues.push(this.createIssue({
-          type: VulnerabilityType.WEAK_CRYPTO_ALGORITHM,
-          severity: SecuritySeverity.HIGH,
-          title: 'Insecure Cipher Mode: ECB',
-          description: `Detected use of ECB mode in ${component.name}. ECB mode is insecure because it does not provide semantic security. Use CBC, GCM, or CTR mode instead.`,
-          location: this.createLocation(component, context),
-          fixComplexity: 'low',
-          recommendations: this.getECBModeRecommendations(),
-          confidence: 95,
-          cwe: [{
-            id: 'CWE-327',
-            name: 'Use of a Broken or Risky Cryptographic Algorithm',
-            url: 'https://cwe.mitre.org/data/definitions/327.html'
-          }]
-        }));
       }
 
       // Language-specific checks

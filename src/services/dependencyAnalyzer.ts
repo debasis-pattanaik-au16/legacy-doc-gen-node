@@ -27,6 +27,10 @@ import { SecurityAnalysisResult } from '@/types/security';
 import { CodeSmellDetector } from '@/services/codeSmells/CodeSmellDetector';
 import { CodeSmellAnalysisResult } from '@/types/codeSmell';
 import { CouplingMetricsCalculator } from '@/services/metrics/CouplingMetricsCalculator';
+import { APIAnalyzer } from '@/services/api/APIAnalyzer';
+import { APIAnalysisResult } from '@/types/api';
+import { DatabaseAnalyzer } from '@/services/database/DatabaseAnalyzer';
+import { DatabaseSchemaAnalysis } from '@/types/database';
 
 /**
  * Advanced Dependency Analyzer
@@ -44,6 +48,8 @@ export class DependencyAnalyzer {
   private securityAnalyzer: SecurityAnalyzer | null = null;
   private codeSmellDetector: CodeSmellDetector | null = null;
   private couplingCalculator: CouplingMetricsCalculator;
+  private apiAnalyzer: APIAnalyzer | null = null;
+  private databaseAnalyzer: DatabaseAnalyzer | null = null;
 
   /**
    * Constructor - accepts optional configuration
@@ -113,6 +119,18 @@ export class DependencyAnalyzer {
         codeSmellAnalysis = await this.runCodeSmellAnalysis(astResults);
       }
 
+      // 6.6. Run API endpoint extraction if enabled
+      let apiAnalysis: APIAnalysisResult | undefined;
+      if (this.config.features.api?.enabled) {
+        apiAnalysis = await this.runApiAnalysis(rootPath);
+      }
+
+      // 6.7. Run database schema analysis if enabled
+      let databaseAnalysis: DatabaseSchemaAnalysis | undefined;
+      if (this.config.features.database?.enabled) {
+        databaseAnalysis = await this.runDatabaseAnalysis(rootPath);
+      }
+
       // 7. Generate AI-powered insights
       const insights = await this.generateInsights(graph, relationships);
       const recommendations = await this.generateRecommendations(graph, insights);
@@ -130,7 +148,9 @@ export class DependencyAnalyzer {
         recommendations,
         metrics,
         security: securityAnalysis,
-        codeSmells: codeSmellAnalysis
+        codeSmells: codeSmellAnalysis,
+        api: apiAnalysis,
+        database: databaseAnalysis
       };
 
     } catch (error: any) {
@@ -1474,6 +1494,115 @@ export class DependencyAnalyzer {
         },
         recommendations: [],
         executionTime: 0,
+      };
+    }
+  }
+
+  /**
+   * Run API endpoint extraction and analysis
+   * @private
+   */
+  private async runApiAnalysis(rootPath: string): Promise<APIAnalysisResult> {
+    try {
+      logger.info('Starting API endpoint extraction...');
+
+      // Initialize API analyzer if not already done
+      if (!this.apiAnalyzer) {
+        this.apiAnalyzer = new APIAnalyzer(rootPath);
+      }
+
+      // Run API analysis
+      const result = await this.apiAnalyzer.analyze();
+
+      logger.info(
+        `API analysis complete. Found ${result.endpoints.length} endpoints ` +
+        `across ${result.frameworks.length} framework(s)`
+      );
+
+      return result;
+    } catch (error: any) {
+      logger.error(`API analysis failed: ${error.message}`);
+      // Return empty result on error rather than failing the entire analysis
+      return {
+        framework: 'UNKNOWN' as any,
+        endpoints: [],
+        routers: [],
+        groups: [],
+        statistics: {
+          totalEndpoints: 0,
+          endpointsByMethod: {},
+          endpointsByPath: {},
+          authenticatedEndpoints: 0,
+          publicEndpoints: 0,
+          deprecatedEndpoints: 0,
+          averageMiddlewareCount: 0,
+          uniquePaths: 0,
+          apiVersions: [],
+        },
+        globalMiddleware: [],
+        securitySchemes: [],
+      };
+    }
+  }
+
+  /**
+   * Run database schema analysis
+   * @private
+   */
+  private async runDatabaseAnalysis(rootPath: string): Promise<DatabaseSchemaAnalysis> {
+    try {
+      logger.info('Starting database schema analysis...');
+
+      // Initialize database analyzer if not already done
+      if (!this.databaseAnalyzer) {
+        this.databaseAnalyzer = new DatabaseAnalyzer(rootPath);
+      }
+
+      // Get database configuration options
+      const dbConfig = this.config.features.database;
+      const analysisOptions = {
+        detectIssues: dbConfig?.detectMissingIndexes ?? true,
+        extractRelationships: true,
+        inferMissingRelationships: dbConfig?.detectNPlusOne ?? true,
+        validateNamingConventions: true,
+        checkPerformance: true,
+      };
+
+      // Run database analysis
+      const result = await this.databaseAnalyzer.analyze(analysisOptions);
+
+      logger.info(
+        `Database analysis complete. Found ${result.entities.length} entities, ` +
+        `${result.relationships.length} relationships, ${result.issues.length} issues`
+      );
+
+      return result;
+    } catch (error: any) {
+      logger.error(`Database analysis failed: ${error.message}`);
+      // Return empty result on error rather than failing the entire analysis
+      return {
+        entities: [],
+        relationships: [],
+        issues: [],
+        statistics: {
+          totalEntities: 0,
+          totalColumns: 0,
+          totalIndexes: 0,
+          totalRelationships: 0,
+          relationshipBreakdown: {},
+          issuesByType: {} as any,
+          issuesBySeverity: {
+            critical: 0,
+            high: 0,
+            medium: 0,
+            low: 0,
+          },
+          averageColumnsPerEntity: 0,
+          entitiesWithoutPrimaryKey: 0,
+          entitiesWithoutIndexes: 0,
+          orphanedTables: 0,
+        },
+        analyzedAt: new Date(),
       };
     }
   }

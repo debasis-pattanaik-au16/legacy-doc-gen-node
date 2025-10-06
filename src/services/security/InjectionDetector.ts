@@ -189,8 +189,19 @@ export class InjectionDetector implements SecurityDetector {
     const issues: SecurityIssue[] = [];
     const code = this.getComponentCode(component, context);
 
-    // Check for string concatenation with SQL keywords
-    for (const pattern of SQL_PATTERNS.stringConcat) {
+    // More specific pattern: look for actual string concatenation with variables
+    // Matches patterns like: "SELECT * FROM users WHERE id = " + userId
+    const concatPatterns = [
+      /["'`]\s*SELECT\s+.+?["'`]\s*\+/i,
+      /["'`]\s*INSERT\s+.+?["'`]\s*\+/i,
+      /["'`]\s*UPDATE\s+.+?["'`]\s*\+/i,
+      /["'`]\s*DELETE\s+.+?["'`]\s*\+/i,
+      /["'`]\s*WHERE\s+.+?["'`]\s*\+/i,
+      // Also check for += with SQL keywords
+      /\+=\s*["'`]\s*(SELECT|INSERT|UPDATE|DELETE|WHERE)/i
+    ];
+
+    for (const pattern of concatPatterns) {
       if (pattern.test(code)) {
         issues.push(this.createIssue({
           type: VulnerabilityType.SQL_INJECTION,
@@ -213,6 +224,7 @@ export class InjectionDetector implements SecurityDetector {
             url: 'https://owasp.org/Top10/A03_2021-Injection/'
           }]
         }));
+        break; // Only report once per component
       }
     }
 
@@ -226,23 +238,37 @@ export class InjectionDetector implements SecurityDetector {
     const issues: SecurityIssue[] = [];
     const code = this.getComponentCode(component, context);
 
-    for (const pattern of SQL_PATTERNS.templateLiteral) {
+    // Check for template literals with SQL and variable interpolation
+    // Only flag if there's actual variable interpolation with SQL keywords
+    const templatePatterns = [
+      /`[^`]*SELECT[^`]*\$\{[^}]+\}[^`]*`/i,
+      /`[^`]*INSERT[^`]*\$\{[^}]+\}[^`]*`/i,
+      /`[^`]*UPDATE[^`]*\$\{[^}]+\}[^`]*`/i,
+      /`[^`]*DELETE[^`]*\$\{[^}]+\}[^`]*`/i,
+      /`[^`]*WHERE[^`]*\$\{[^}]+\}[^`]*`/i
+    ];
+
+    for (const pattern of templatePatterns) {
       if (pattern.test(code)) {
-        issues.push(this.createIssue({
-          type: VulnerabilityType.SQL_INJECTION,
-          severity: SecuritySeverity.CRITICAL,
-          title: 'SQL Injection via Template Literals',
-          description: `Detected SQL query using template literals with user input in ${component.name}. Use parameterized queries instead.`,
-          location: this.createLocation(component, context),
-          fixComplexity: 'low',
-          recommendations: this.getSQLInjectionRecommendations(),
-          confidence: 80,
-          cwe: [{
-            id: 'CWE-89',
-            name: 'SQL Injection',
-            url: 'https://cwe.mitre.org/data/definitions/89.html'
-          }]
-        }));
+        // Avoid flagging safe patterns like $1, $2 (parameterized queries)
+        if (!/\$\{\d+\}/i.test(code)) {
+          issues.push(this.createIssue({
+            type: VulnerabilityType.SQL_INJECTION,
+            severity: SecuritySeverity.CRITICAL,
+            title: 'SQL Injection via Template Literals',
+            description: `Detected SQL query using template literals with user input in ${component.name}. Use parameterized queries instead.`,
+            location: this.createLocation(component, context),
+            fixComplexity: 'low',
+            recommendations: this.getSQLInjectionRecommendations(),
+            confidence: 80,
+            cwe: [{
+              id: 'CWE-89',
+              name: 'SQL Injection',
+              url: 'https://cwe.mitre.org/data/definitions/89.html'
+            }]
+          }));
+          break; // Only report once per component
+        }
       }
     }
 
@@ -289,8 +315,32 @@ export class InjectionDetector implements SecurityDetector {
     for (const component of ast.components) {
       const code = this.getComponentCode(component, context);
 
-      // Check for dangerous DOM methods
+      // Check for React unsafe patterns first (to avoid duplicate reporting)
+      let hasReactXSS = false;
+      if (code.includes('dangerouslySetInnerHTML')) {
+        issues.push(this.createIssue({
+          type: VulnerabilityType.XSS,
+          severity: SecuritySeverity.HIGH,
+          title: 'React XSS via dangerouslySetInnerHTML',
+          description: `Detected use of 'dangerouslySetInnerHTML' in ${component.name}. Ensure all HTML is properly sanitized before rendering.`,
+          location: this.createLocation(component, context),
+          fixComplexity: 'medium',
+          recommendations: this.getReactXSSRecommendations(),
+          confidence: 85,
+          cwe: [{
+            id: 'CWE-79',
+            name: 'Cross-site Scripting (XSS)',
+            url: 'https://cwe.mitre.org/data/definitions/79.html'
+          }]
+        }));
+        hasReactXSS = true;
+      }
+
+      // Check for dangerous DOM methods (but skip dangerouslySetInnerHTML if already reported)
       for (const method of XSS_PATTERNS.dangerousMethods) {
+        if (method === 'dangerouslySetInnerHTML' && hasReactXSS) {
+          continue; // Skip to avoid duplicate
+        }
         if (code.includes(method)) {
           issues.push(this.createIssue({
             type: VulnerabilityType.XSS,
@@ -311,27 +361,6 @@ export class InjectionDetector implements SecurityDetector {
               year: 2021,
               rank: 3,
               url: 'https://owasp.org/Top10/A03_2021-Injection/'
-            }]
-          }));
-        }
-      }
-
-      // Check for React unsafe patterns
-      for (const pattern of XSS_PATTERNS.reactUnsafe) {
-        if (code.includes(pattern)) {
-          issues.push(this.createIssue({
-            type: VulnerabilityType.XSS,
-            severity: SecuritySeverity.HIGH,
-            title: 'React XSS via dangerouslySetInnerHTML',
-            description: `Detected use of '${pattern}' in ${component.name}. Ensure all HTML is properly sanitized before rendering.`,
-            location: this.createLocation(component, context),
-            fixComplexity: 'medium',
-            recommendations: this.getReactXSSRecommendations(),
-            confidence: 85,
-            cwe: [{
-              id: 'CWE-79',
-              name: 'Cross-site Scripting (XSS)',
-              url: 'https://cwe.mitre.org/data/definitions/79.html'
             }]
           }));
         }

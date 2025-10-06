@@ -443,6 +443,7 @@ export const DEFAULT_CONFIG: AnalysisConfiguration = {
         cognitiveComplexity: 15,
       },
     },
+    
     patterns: {
       enabled: true,
       types: ['mvc', 'singleton', 'factory', 'observer', 'repository'],

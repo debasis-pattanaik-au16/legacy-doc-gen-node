@@ -276,7 +276,29 @@ const analysisResultSchema = new Schema<IAnalysisResult>({
   },
   // Phase 1: AI-generated insights and recommendations
   insights: [analysisInsightSchema],
-  recommendations: [recommendationSchema]
+  recommendations: [recommendationSchema],
+  
+  // Phase 2: Advanced Analysis Results
+  security: {
+    type: Schema.Types.Mixed,
+    description: 'Security vulnerability analysis results from Phase 2.1'
+  },
+  codeSmells: {
+    type: Schema.Types.Mixed,
+    description: 'Code smell detection results from Phase 2.2'
+  },
+  metrics: {
+    type: Schema.Types.Mixed,
+    description: 'Enhanced complexity and quality metrics from Phase 2.3'
+  },
+  api: {
+    type: Schema.Types.Mixed,
+    description: 'Comprehensive API endpoint analysis from Phase 2.4'
+  },
+  database: {
+    type: Schema.Types.Mixed,
+    description: 'Database schema analysis results from Phase 2.5'
+  }
 }, {
   timestamps: true,
   toJSON: {
@@ -297,6 +319,12 @@ analysisResultSchema.index({ 'insights.impact': 1 });
 analysisResultSchema.index({ 'insights.category': 1 });
 analysisResultSchema.index({ 'recommendations.priority': 1 });
 analysisResultSchema.index({ 'recommendations.type': 1 });
+// Phase 2: Indexes for advanced analysis results
+analysisResultSchema.index({ 'security.summary.totalIssues': 1 });
+analysisResultSchema.index({ 'security.summary.issuesBySeverity.critical': 1 });
+analysisResultSchema.index({ 'codeSmells.summary.totalSmells': 1 });
+analysisResultSchema.index({ 'api.statistics.totalEndpoints': 1 });
+analysisResultSchema.index({ 'database.statistics.totalEntities': 1 });
 
 // Instance Methods
 analysisResultSchema.methods.getComponentsByType = function(type: string) {
@@ -323,6 +351,53 @@ analysisResultSchema.methods.getCriticalIssues = function() {
   const criticalInsights = this.insights?.filter((i: any) => i.impact === 'critical') || [];
   const criticalRecs = this.recommendations?.filter((r: any) => r.priority === 'critical') || [];
   return { insights: criticalInsights, recommendations: criticalRecs };
+};
+
+// Phase 2: Helper methods for advanced analysis results
+analysisResultSchema.methods.getSecurityIssuesBySeverity = function(severity: string) {
+  return this.security?.issues?.filter((issue: any) => issue.severity === severity) || [];
+};
+
+analysisResultSchema.methods.getCodeSmellsByType = function(type: string) {
+  return this.codeSmells?.smells?.filter((smell: any) => smell.type === type) || [];
+};
+
+analysisResultSchema.methods.getApiEndpointsByFramework = function(framework: string) {
+  return this.api?.endpoints?.filter((endpoint: any) => endpoint.framework === framework) || [];
+};
+
+analysisResultSchema.methods.getDatabaseEntitiesByORM = function(ormType: string) {
+  return this.database?.entities?.filter((entity: any) => entity.orm?.type === ormType) || [];
+};
+
+analysisResultSchema.methods.getPhase2Summary = function() {
+  return {
+    security: {
+      totalIssues: this.security?.summary?.totalIssues || 0,
+      criticalIssues: this.security?.summary?.issuesBySeverity?.critical || 0,
+      highIssues: this.security?.summary?.issuesBySeverity?.high || 0
+    },
+    codeSmells: {
+      totalSmells: this.codeSmells?.summary?.totalSmells || 0,
+      criticalSmells: this.codeSmells?.summary?.bySeverity?.critical || 0,
+      highSmells: this.codeSmells?.summary?.bySeverity?.high || 0
+    },
+    api: {
+      totalEndpoints: this.api?.statistics?.totalEndpoints || 0,
+      frameworks: this.api?.frameworks?.length || 0,
+      authenticatedEndpoints: this.api?.statistics?.authenticatedEndpoints || 0
+    },
+    database: {
+      totalEntities: this.database?.statistics?.totalEntities || 0,
+      totalRelationships: this.database?.statistics?.totalRelationships || 0,
+      issues: this.database?.issues?.length || 0
+    },
+    metrics: {
+      couplingIndex: this.metrics?.couplingIndex || 0,
+      cohesionIndex: this.metrics?.cohesionIndex || 0,
+      instabilityIndex: this.metrics?.instabilityIndex || 0
+    }
+  };
 };
 
 // Static Methods
