@@ -101,7 +101,7 @@ export class APIAnalyzer {
    * 2. Scan source files for framework imports
    * 3. Detect framework-specific patterns in code
    * 
-   * Supports: Express, Fastify, Next.js, Koa, Hapi
+   * Supports: Express, Fastify, Next.js, Koa, Hapi, GraphQL
    */
   private async detectFrameworks(): Promise<void> {
     // Check package.json for framework dependencies
@@ -143,6 +143,12 @@ export class APIAnalyzer {
         // Detect NestJS
         if (allDeps['@nestjs/core']) {
           this.detectedFrameworks.add('NESTJS');
+        }
+
+        // Detect GraphQL
+        if (allDeps['graphql'] || allDeps['apollo-server'] || allDeps['apollo-server-express'] || 
+            allDeps['@apollo/server'] || allDeps['express-graphql'] || allDeps['graphql-yoga']) {
+          this.detectedFrameworks.add('GRAPHQL');
         }
       } catch (error) {
         console.warn('Failed to parse package.json:', error);
@@ -368,13 +374,20 @@ export class APIAnalyzer {
     // Detect API version from paths
     const versions = this.detectApiVersions();
 
+    // Detect if GraphQL is being used
+    const hasGraphQL = this.detectedFrameworks.has('GRAPHQL');
+    const hasOpenAPI = !hasGraphQL && this.endpoints.length > 0; // Only REST APIs use OpenAPI
+
     return {
       title: this.generateApiTitle(),
       description: this.generateApiDescription(),
       version: versions.length > 0 ? versions[0] : '1.0.0',
       baseUrl: this.inferBaseUrl(),
       tags,
-      servers: this.generateServerList()
+      servers: this.generateServerList(),
+      hasGraphQL,
+      hasOpenAPI,
+      apiType: hasGraphQL ? 'GraphQL' : 'REST'
     };
   }
 

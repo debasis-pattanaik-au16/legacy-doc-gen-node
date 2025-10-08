@@ -93,7 +93,12 @@ export class CognitiveComplexityCalculator {
 
     // Control flow structures - increment by 1 + nesting level
     if (this.isControlFlowNode(node)) {
-      this.complexity += 1 + this.nestingLevel;
+      // Cognitive complexity rule: +1 for structure, +nesting for nested structures
+      // BUT: nesting penalty is only +1 per level (not multiplicative)
+      this.complexity += 1;
+      if (this.nestingLevel > 0) {
+        this.complexity += this.nestingLevel; // Add nesting penalty once
+      }
       
       // Increase nesting for the body
       if (this.hasBody(node)) {
@@ -124,11 +129,17 @@ export class CognitiveComplexityCalculator {
     }
     // Ternary operator
     else if (t.isConditionalExpression(node)) {
-      this.complexity += 1 + this.nestingLevel;
+      this.complexity += 1;
+      if (this.nestingLevel > 0) {
+        this.complexity += this.nestingLevel;
+      }
     }
     // catch blocks
     else if (t.isCatchClause(node)) {
-      this.complexity += 1 + this.nestingLevel;
+      this.complexity += 1;
+      if (this.nestingLevel > 0) {
+        this.complexity += this.nestingLevel;
+      }
       this.nestingLevel++;
       // Will be decremented by traversal
     }
@@ -247,6 +258,13 @@ export class CognitiveComplexityCalculator {
     this.functionCalls = new Set();
 
     const componentName = component.name;
+    
+    // Handle anonymous/unnamed components
+    if (!componentName) {
+      logger.debug('Skipping cognitive complexity for unnamed component');
+      return 0;
+    }
+    
     let insideComponent = false;
     let componentDepth = 0;
 
@@ -305,12 +323,12 @@ export class CognitiveComplexityCalculator {
       }
 
       if (!insideComponent) {
-        logger.warn(`Could not find component ${componentName} in AST`);
+        logger.debug(`Could not find component '${componentName}' in AST (may be nested or scoped differently)`);
       }
 
       return this.complexity;
     } catch (error: any) {
-      logger.error(`Error calculating cognitive complexity for ${componentName}: ${error.message}`);
+      logger.error(`Error calculating cognitive complexity for '${componentName}': ${error.message}`);
       return 0;
     }
   }

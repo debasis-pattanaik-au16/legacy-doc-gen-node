@@ -49,12 +49,17 @@ export class AnalysisResultTransformer {
     complexityMetrics: ComplexityMetrics;
     insights: AnalysisInsight[];
     recommendations: Recommendation[];
+    security?: any;
+    codeSmells?: any;
+    metrics?: any;
+    api?: any;
+    database?: any;
     generatedAt: Date;
   } {
     logger.info('Transforming DependencyAnalysisResult to database format');
 
     try {
-      return {
+      const transformedResult: any = {
         projectId: new mongoose.Types.ObjectId(projectId),
         components: this.extractComponents(analysisResult.graph),
         dependencies: this.extractDependencies(
@@ -72,6 +77,45 @@ export class AnalysisResultTransformer {
         recommendations: this.transformRecommendations(analysisResult.recommendations),
         generatedAt: new Date()
       };
+
+      // Phase 2: Include advanced analysis results if available
+      if (analysisResult.security) {
+        transformedResult.security = analysisResult.security;
+        logger.info('Including security analysis results in transformation');
+      }
+
+      if (analysisResult.codeSmells) {
+        transformedResult.codeSmells = analysisResult.codeSmells;
+        logger.info('Including code smell analysis results in transformation');
+      }
+
+      if (analysisResult.api) {
+        transformedResult.api = analysisResult.api;
+        logger.info('Including API analysis results in transformation');
+      }
+
+      if (analysisResult.database) {
+        transformedResult.database = analysisResult.database;
+        logger.info('Including database analysis results in transformation');
+      }
+
+      // Phase 2.3: Include enhanced metrics if available
+      if (analysisResult.metrics) {
+        transformedResult.metrics = {
+          couplingIndex: analysisResult.metrics.couplingIndex,
+          cohesionIndex: analysisResult.metrics.cohesionIndex,
+          instabilityIndex: analysisResult.metrics.instabilityIndex,
+          abstractnessIndex: analysisResult.metrics.abstractnessIndex,
+          totalDependencies: analysisResult.metrics.totalDependencies,
+          circularDependencies: analysisResult.metrics.circularDependencies,
+          externalDependencies: analysisResult.metrics.externalDependencies,
+          avgDependenciesPerFile: analysisResult.metrics.avgDependenciesPerFile,
+          maxDependencyDepth: analysisResult.metrics.maxDependencyDepth
+        };
+        logger.info('Including enhanced metrics in transformation');
+      }
+
+      return transformedResult;
     } catch (error: any) {
       logger.error('Error transforming analysis result:', error);
       throw new Error(`Analysis result transformation failed: ${error.message}`);

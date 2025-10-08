@@ -169,6 +169,18 @@ export class MagicNumberDetector {
       return false;
     }
 
+    // Exclude common HTTP status codes (should be from standard libraries)
+    const commonHttpCodes = [200, 201, 204, 301, 302, 304, 400, 401, 403, 404, 500, 502, 503, 504];
+    if (commonHttpCodes.includes(value)) {
+      return false;
+    }
+
+    // Exclude common port numbers
+    const commonPorts = [80, 443, 3000, 5000, 8080, 8443];
+    if (commonPorts.includes(value)) {
+      return false;
+    }
+
     // Exclude powers of 2 (often intentional, like buffer sizes)
     // But report if they're large and specific
     if (this.isPowerOfTwo(value) && value < 256) {
@@ -192,11 +204,16 @@ export class MagicNumberDetector {
     // Large numbers are usually significant
     if (Math.abs(value) > 1000) return true;
 
-    // HTTP status codes
-    if (value >= 100 && value < 600 && value % 100 <= 99) return true;
+    // Don't auto-report common HTTP status codes
+    const commonHttpCodes = [200, 201, 204, 301, 302, 304, 400, 401, 403, 404, 500, 502, 503, 504];
+    if (commonHttpCodes.includes(value)) return false;
 
-    // Port numbers
-    if (value >= 1000 && value <= 65535) return true;
+    // Don't auto-report common port numbers
+    const commonPorts = [80, 443, 3000, 5000, 8080, 8443];
+    if (commonPorts.includes(value)) return false;
+
+    // Port numbers (excluding common ones)
+    if (value >= 1024 && value <= 65535) return true;
 
     return false;
   }

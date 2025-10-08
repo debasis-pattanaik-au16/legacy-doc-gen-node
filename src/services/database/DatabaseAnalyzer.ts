@@ -347,8 +347,20 @@ export class DatabaseAnalyzer {
   private detectPrimaryORM(): ORMType | undefined {
     if (this.detectedORMs.size === 0) return undefined;
     
-    // Return the first detected ORM
-    // In a more sophisticated implementation, we could count entities per ORM
+    // Priority order for common MERN/MEAN stacks:
+    // 1. Mongoose (most common for MongoDB in Node.js)
+    // 2. TypeORM (for SQL/TypeScript projects)
+    // 3. Prisma (modern ORM)
+    // 4. Others
+    const priorityOrder: ORMType[] = ['mongoose', 'typeorm', 'prisma', 'sequelize', 'sqlalchemy', 'django'];
+    
+    for (const orm of priorityOrder) {
+      if (this.detectedORMs.has(orm)) {
+        return orm;
+      }
+    }
+    
+    // Return the first detected ORM if no priority match
     return Array.from(this.detectedORMs)[0];
   }
 
@@ -356,8 +368,33 @@ export class DatabaseAnalyzer {
    * Detect database dialect
    */
   private detectDatabaseDialect(): DatabaseDialect | undefined {
-    // Try to detect from entities or configuration
-    // For now, return undefined - would need more sophisticated detection
+    // Detect based on ORM type
+    const primaryORM = this.detectPrimaryORM();
+    
+    if (primaryORM === 'mongoose') {
+      return 'mongodb' as DatabaseDialect;
+    }
+    
+    // Try to detect from package.json
+    const packageJsonPath = path.join(this.projectPath, 'package.json');
+    if (fs.existsSync(packageJsonPath)) {
+      try {
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+        const allDeps = {
+          ...packageJson.dependencies,
+          ...packageJson.devDependencies,
+        };
+        
+        // Check for database drivers
+        if (allDeps['mongodb'] || allDeps['mongoose']) return 'mongodb' as DatabaseDialect;
+        if (allDeps['pg'] || allDeps['postgres']) return 'postgres' as DatabaseDialect;
+        if (allDeps['mysql'] || allDeps['mysql2']) return 'mysql' as DatabaseDialect;
+        if (allDeps['sqlite3'] || allDeps['better-sqlite3']) return 'sqlite' as DatabaseDialect;
+      } catch (error) {
+        // Continue to fallback
+      }
+    }
+    
     return undefined;
   }
 

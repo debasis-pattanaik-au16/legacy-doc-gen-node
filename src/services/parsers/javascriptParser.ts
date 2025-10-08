@@ -412,21 +412,22 @@ export class JavaScriptParser implements LanguageParser {
     // Calculate cognitive complexity using full AST
     let cognitiveComplexity = 1;
     try {
-      if (this.currentFullAST && this.cognitiveCalculator) {
+      // Only use full AST calculation if component has a name
+      if (node.name && this.currentFullAST && this.cognitiveCalculator) {
         // Use the full AST with component name for proper traversal
         cognitiveComplexity = this.cognitiveCalculator.calculateForComponent(
           node,
           this.currentFullAST
         );
       } else if (astNode && this.cognitiveCalculator) {
-        // Fallback: try with the provided node (may fail with scope errors)
+        // Fallback: try with the provided node directly (works for anonymous functions)
         cognitiveComplexity = this.cognitiveCalculator.calculate(astNode, node.name);
       } else {
         // Final fallback to estimation
         cognitiveComplexity = this.calculateCognitiveComplexity(node);
       }
     } catch (error: any) {
-      logger.debug(`Failed to calculate cognitive complexity for ${node.name}: ${error.message}`);
+      logger.debug(`Failed to calculate cognitive complexity for ${node.name || 'anonymous'}: ${error.message}`);
       cognitiveComplexity = this.calculateCognitiveComplexity(node);
     }
     

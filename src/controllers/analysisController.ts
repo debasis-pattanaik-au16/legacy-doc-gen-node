@@ -300,20 +300,48 @@ export class AnalysisController {
       }
 
       // Create or update analysis result document using upsert
+      const updateData: any = {
+        projectId: transformedData.projectId,
+        components: allComponents,
+        dependencies: transformedData.dependencies,
+        apiEndpoints: transformedData.apiEndpoints,
+        databaseSchemas: transformedData.databaseSchemas,
+        architecturePatterns: transformedData.architecturePatterns,
+        complexityMetrics: transformedData.complexityMetrics,
+        insights: transformedData.insights,                  // Phase 1: AI-generated insights
+        recommendations: transformedData.recommendations,    // Phase 1: Actionable recommendations
+        generatedAt: transformedData.generatedAt
+      };
+
+      // Phase 2: Include advanced analysis results if available
+      if (transformedData.security) {
+        updateData.security = transformedData.security;
+        logger.info(`Storing security analysis with ${transformedData.security.issues?.length || 0} issues`);
+      }
+
+      if (transformedData.codeSmells) {
+        updateData.codeSmells = transformedData.codeSmells;
+        logger.info(`Storing code smell analysis with ${transformedData.codeSmells.smells?.length || 0} smells`);
+      }
+
+      if (transformedData.api) {
+        updateData.api = transformedData.api;
+        logger.info(`Storing API analysis with ${transformedData.api.endpoints?.length || 0} endpoints`);
+      }
+
+      if (transformedData.database) {
+        updateData.database = transformedData.database;
+        logger.info(`Storing database analysis with ${transformedData.database.entities?.length || 0} entities`);
+      }
+
+      if (transformedData.metrics) {
+        updateData.metrics = transformedData.metrics;
+        logger.info(`Storing enhanced metrics (coupling: ${transformedData.metrics.couplingIndex?.toFixed(2) || 'N/A'}, cohesion: ${transformedData.metrics.cohesionIndex?.toFixed(2) || 'N/A'})`);
+      }
+
       const analysisResult = await AnalysisResult.findOneAndUpdate(
         { projectId: project._id },
-        {
-          projectId: transformedData.projectId,
-          components: allComponents,
-          dependencies: transformedData.dependencies,
-          apiEndpoints: transformedData.apiEndpoints,
-          databaseSchemas: transformedData.databaseSchemas,
-          architecturePatterns: transformedData.architecturePatterns,
-          complexityMetrics: transformedData.complexityMetrics,
-          insights: transformedData.insights,                  // NEW: AI-generated insights
-          recommendations: transformedData.recommendations,    // NEW: Actionable recommendations
-          generatedAt: transformedData.generatedAt
-        },
+        updateData,
         { 
           upsert: true, 
           new: true,
