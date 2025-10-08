@@ -63,69 +63,6 @@ const dependencySchema = new Schema({
   }
 }, { _id: false });
 
-/**
- * API Endpoint Schema
- */
-const apiEndpointSchema = new Schema({
-  method: {
-    type: String,
-    enum: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    required: true
-  },
-  path: {
-    type: String,
-    required: true
-  },
-  filePath: {
-    type: String,
-    required: true
-  },
-  handler: {
-    type: String,
-    required: true
-  },
-  parameters: [{
-    name: String,
-    type: String,
-    required: Boolean,
-    description: String
-  }],
-  responses: [{
-    statusCode: Number,
-    description: String,
-    schema: Schema.Types.Mixed
-  }]
-}, { _id: false });
-
-/**
- * Database Schema
- */
-const databaseSchemaSchema = new Schema({
-  name: {
-    type: String,
-    required: true
-  },
-  type: {
-    type: String,
-    enum: ['table', 'collection'],
-    required: true
-  },
-  fields: [{
-    name: String,
-    type: String,
-    required: Boolean,
-    unique: Boolean,
-    index: Boolean
-  }],
-  relationships: [{
-    type: {
-      type: String,
-      enum: ['oneToOne', 'oneToMany', 'manyToMany']
-    },
-    target: String,
-    foreignKey: String
-  }]
-}, { _id: false });
 
 /**
  * Complexity Metrics Schema
@@ -264,8 +201,6 @@ const analysisResultSchema = new Schema<IAnalysisResult>({
   },
   components: [componentSchema],
   dependencies: [dependencySchema],
-  apiEndpoints: [apiEndpointSchema],
-  databaseSchemas: [databaseSchemaSchema],
   architecturePatterns: [{
     type: String,
     trim: true
@@ -313,7 +248,6 @@ const analysisResultSchema = new Schema<IAnalysisResult>({
 analysisResultSchema.index({ projectId: 1 }, { unique: true });
 analysisResultSchema.index({ createdAt: -1 });
 analysisResultSchema.index({ 'components.type': 1 });
-analysisResultSchema.index({ 'apiEndpoints.method': 1 });
 // Phase 1: Indexes for insights and recommendations
 analysisResultSchema.index({ 'insights.impact': 1 });
 analysisResultSchema.index({ 'insights.category': 1 });
@@ -329,10 +263,6 @@ analysisResultSchema.index({ 'database.statistics.totalEntities': 1 });
 // Instance Methods
 analysisResultSchema.methods.getComponentsByType = function(type: string) {
   return this.components.filter((component: Component) => component.type === type);
-};
-
-analysisResultSchema.methods.getApiEndpointsByMethod = function(method: string) {
-  return this.apiEndpoints.filter((endpoint: ApiEndpoint) => endpoint.method === method);
 };
 
 analysisResultSchema.methods.getDependenciesByType = function(type: string) {
@@ -413,7 +343,6 @@ analysisResultSchema.statics.getAnalysisStats = function() {
         totalAnalyses: { $sum: 1 },
         avgComponents: { $avg: { $size: '$components' } },
         avgDependencies: { $avg: { $size: '$dependencies' } },
-        avgApiEndpoints: { $avg: { $size: '$apiEndpoints' } },
         avgComplexity: { $avg: '$complexityMetrics.cyclomaticComplexity' }
       }
     }

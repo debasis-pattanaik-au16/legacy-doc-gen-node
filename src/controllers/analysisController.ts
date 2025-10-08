@@ -106,13 +106,16 @@ export class AnalysisController {
       projectId,
       totalComponents: analysisResult.components.length,
       totalDependencies: analysisResult.dependencies.length,
-      totalApiEndpoints: analysisResult.apiEndpoints.length,
-      totalDatabaseSchemas: analysisResult.databaseSchemas.length,
+      // Phase 2: Use api.statistics instead of apiEndpoints array
+      totalApiEndpoints: analysisResult.api?.statistics?.totalEndpoints || analysisResult.api?.endpoints?.length || 0,
+      // Phase 2: Use database.statistics instead of databaseSchemas array
+      totalDatabaseSchemas: analysisResult.database?.statistics?.totalEntities || analysisResult.database?.entities?.length || 0,
       architecturePatterns: analysisResult.architecturePatterns,
       complexityMetrics: analysisResult.complexityMetrics,
       componentsByType: this.groupComponentsByType(analysisResult.components),
       dependenciesByType: this.groupDependenciesByType(analysisResult.dependencies),
-      apiEndpointsByMethod: this.groupApiEndpointsByMethod(analysisResult.apiEndpoints),
+      // Phase 2: Group API endpoints from api.endpoints
+      apiEndpointsByMethod: this.groupApiEndpointsByMethod(analysisResult.api?.endpoints || []),
       // NEW: Insights and recommendations summary
       totalInsights: analysisResult.insights?.length || 0,
       totalRecommendations: analysisResult.recommendations?.length || 0,
@@ -304,8 +307,6 @@ export class AnalysisController {
         projectId: transformedData.projectId,
         components: allComponents,
         dependencies: transformedData.dependencies,
-        apiEndpoints: transformedData.apiEndpoints,
-        databaseSchemas: transformedData.databaseSchemas,
         architecturePatterns: transformedData.architecturePatterns,
         complexityMetrics: transformedData.complexityMetrics,
         insights: transformedData.insights,                  // Phase 1: AI-generated insights

@@ -43,8 +43,6 @@ export class AnalysisResultTransformer {
     projectId: mongoose.Types.ObjectId;
     components: Component[];
     dependencies: Dependency[];
-    apiEndpoints: any[];
-    databaseSchemas: any[];
     architecturePatterns: string[];
     complexityMetrics: ComplexityMetrics;
     insights: AnalysisInsight[];
@@ -66,8 +64,6 @@ export class AnalysisResultTransformer {
           analysisResult.graph, 
           analysisResult.relationships
         ),
-        apiEndpoints: [], // To be populated by separate API analysis
-        databaseSchemas: [], // To be populated by separate DB analysis
         architecturePatterns: this.detectPatterns(analysisResult),
         complexityMetrics: this.mapMetrics(
           analysisResult.metrics, 

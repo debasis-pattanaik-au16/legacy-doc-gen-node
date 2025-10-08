@@ -53,7 +53,8 @@ export class DocumentationGenerator {
     try {
       logger.info(`Generating API documentation for project: ${project.name}`);
       
-      const apiEndpoints = analysisResult.apiEndpoints || [];
+      // Phase 2: Use api.endpoints instead of apiEndpoints array
+      const apiEndpoints = (analysisResult as any).api?.endpoints || [];
       
       if (apiEndpoints.length === 0) {
         return this.generateNoApiDocsMessage(project);
@@ -126,7 +127,8 @@ ${badges}`;
   private generateProjectOverview(analysisResult: IAnalysisResult, project: IProject): string {
     const componentCount = analysisResult.components?.length || 0;
     const dependencyCount = analysisResult.dependencies?.length || 0;
-    const apiEndpointCount = analysisResult.apiEndpoints?.length || 0;
+    // Phase 2: Use api.statistics or api.endpoints
+    const apiEndpointCount = (analysisResult as any).api?.statistics?.totalEndpoints || (analysisResult as any).api?.endpoints?.length || 0;
     const languages = project.codebaseMetadata?.languages || [];
     const fileCount = project.codebaseMetadata?.fileCount || 0;
     const linesOfCode = project.codebaseMetadata?.totalLines || 0;
@@ -331,8 +333,10 @@ ${project?.name || 'project'}/
    */
   private generateFeatures(analysisResult: IAnalysisResult): string {
     const components = analysisResult.components || [];
-    const apiEndpoints = analysisResult.apiEndpoints || [];
-    const hasDatabase = (analysisResult.databaseSchemas?.length || 0) > 0;
+    // Phase 2: Use api.endpoints instead of apiEndpoints array
+    const apiEndpoints = (analysisResult as any).api?.endpoints || [];
+    // Phase 2: Use database.entities instead of databaseSchemas array
+    const hasDatabase = ((analysisResult as any).database?.entities?.length || 0) > 0;
     
     let features = `## ✨ Features
 
@@ -385,11 +389,13 @@ ${project?.name || 'project'}/
 ${keyLibraries.map(lib => `- **${lib}**`).join('\n')}`;
     }
 
-    if (analysisResult.apiEndpoints && analysisResult.apiEndpoints.length > 0) {
+    // Phase 2: Use api.endpoints or api.statistics
+    const apiEndpointCount = (analysisResult as any).api?.statistics?.totalEndpoints || (analysisResult as any).api?.endpoints?.length || 0;
+    if (apiEndpointCount > 0) {
       technical += `
 
 ### API Documentation
-This project exposes a RESTful API with ${analysisResult.apiEndpoints.length} endpoints.
+This project exposes a RESTful API with ${apiEndpointCount} endpoints.
 For detailed API documentation, see the API Documentation section.`;
     }
 
@@ -662,7 +668,8 @@ No specific architectural patterns were automatically identified. This could ind
   private generateDataFlow(analysisResult: IAnalysisResult): string {
     const components = analysisResult.components || [];
     const dependencies = analysisResult.dependencies || [];
-    const apiEndpoints = analysisResult.apiEndpoints || [];
+    // Phase 2: Use api.endpoints instead of apiEndpoints array
+    const apiEndpoints = (analysisResult as any).api?.endpoints || [];
     
     let dataFlow = `## 🌊 Data Flow Architecture
 

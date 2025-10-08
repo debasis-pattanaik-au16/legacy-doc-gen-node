@@ -167,19 +167,17 @@ export interface IAnalysisResult extends Document {
   projectId: mongoose.Types.ObjectId;
   components: Component[];
   dependencies: Dependency[];
-  apiEndpoints: ApiEndpoint[];          // Legacy API endpoints (basic)
-  databaseSchemas: DatabaseSchema[];    // Legacy database schemas (basic)
   architecturePatterns: string[];
   complexityMetrics: ComplexityMetrics;
   insights?: AnalysisInsight[];         // AI-generated insights (Phase 1)
   recommendations?: Recommendation[];    // Actionable recommendations (Phase 1)
   
-  // Phase 2: Advanced Analysis Results
+  // Phase 2: Advanced Analysis Results (contains comprehensive data)
   security?: any;                       // SecurityAnalysisResult from Phase 2.1
   codeSmells?: any;                     // CodeSmellAnalysisResult from Phase 2.2
   metrics?: any;                        // Enhanced metrics from Phase 2.3
-  api?: any;                            // Comprehensive APIAnalysisResult from Phase 2.4
-  database?: any;                       // Comprehensive DatabaseSchemaAnalysis from Phase 2.5
+  api?: any;                            // Comprehensive APIAnalysisResult from Phase 2.4 (includes endpoints)
+  database?: any;                       // Comprehensive DatabaseSchemaAnalysis from Phase 2.5 (includes entities)
   
   generatedAt: Date;
 }
